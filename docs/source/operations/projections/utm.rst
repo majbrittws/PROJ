@@ -6,12 +6,12 @@ Universal Transverse Mercator (UTM)
 
 The Universal Transverse Mercator is a system of map projections divided into
 sixty zones across the globe, with each zone corresponding to 6 degrees of
-longigude.
+longitude.
 
 +---------------------+----------------------------------------------------------+
 | **Classification**  | Transverse cylindrical, conformal                        |
 +---------------------+----------------------------------------------------------+
-| **Available forms** | Forward and inverse, Spherical and Elliptical            |
+| **Available forms** | Forward and inverse, ellipsoidal only                    |
 +---------------------+----------------------------------------------------------+
 | **Defined area**    | Within the used zone, but transformations of coordinates |
 |                     | in adjacent zones can be expected to be accurate as well |
@@ -75,6 +75,21 @@ Optional
     .. versionadded:: 6.0.0
 
     Use faster, less accurate algorithm for the Transverse Mercator.
+
+.. option:: +algo=auto/evenden_snyder/poder_engsager
+
+    .. versionadded:: 7.1
+
+    Selects the algorithm to use. The hardcoded value and the one defined in
+    :ref:`proj-ini` default to ``poder_engsager``, that is the most precise
+    one.
+
+    When using auto, a heuristics based on the input coordinate to transform
+    is used to determine if the faster Evenden-Snyder method can be used, for
+    faster computation, without causing an error greater than 0.1 mm (for an
+    ellipsoid of the size of Earth)
+
+    Note that :option:`+approx` and :option:`+algo` are mutually exclusive.
 
 .. include:: ../options/ellps.rst
 

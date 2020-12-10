@@ -15,10 +15,46 @@ Synopsis
 
     **cct** [**-cIostvz** [args]] *+opt[=arg]* ... file ...
 
+or
+
+    **cct** [**-cIostvz** [args]] {object_definition} file ...
+
+Where {object_definition} is one of the possibilities accepted
+by :c:func:`proj_create`, provided it expresses a coordinate operation
+
+    - a proj-string,
+    - a WKT string,
+    - an object code (like "EPSG:1671" "urn:ogc:def:coordinateOperation:EPSG::1671"),
+    - an object name. e.g "ITRF2014 to ETRF2014 (1)". In that case as
+      uniqueness is not guaranteed, heuristics are applied to determine the appropriate best match.
+    - a OGC URN combining references for concatenated operations
+      (e.g. "urn:ogc:def:coordinateOperation,coordinateOperation:EPSG::3895,coordinateOperation:EPSG::1618")
+    - a PROJJSON string. The jsonschema is at https://proj.org/schemas/v0.2/projjson.schema.json
+
+    .. versionadded:: 8.0.0
+
+    .. note::
+
+        Before version 8.0.0 only proj-strings could be used to instantiate
+        operations in :program:`cct`.
+
+
+or
+
+    **cct** [**-cIostvz** [args]] {object_reference} file ...
+
+where {object_reference} is a filename preceded by the '@' character.  The
+file referenced by the {object_reference} must contain a valid
+{object_definition}.
+
+    .. versionadded:: 8.0.0
+
+
+
 Description
 ***********
 
-:program:`cct` a 4D equivalent to the :program:`proj` projection program,
+:program:`cct` is a 4D equivalent to the :program:`proj` projection program,
 performs transformation coordinate systems on a set of input points. The
 coordinate system transformation can include translation between projected
 and geographic coordinates as well as the application of datum shifts.
@@ -34,7 +70,7 @@ The following control parameters can appear in any order:
 
 .. option:: -d <n>
 
-.. versionadded:: 5.2.0
+    .. versionadded:: 5.2.0
 
     Specify the number of decimals in the output.
 
@@ -90,6 +126,17 @@ cartesian coordinates) and
 
 *Coordinate Transformations*, which are coordinate operations where
 input and output datums differ (e.g. change of reference frame).
+
+Use of remote grids
+*******************
+
+.. versionadded:: 7.0.0
+
+If the :envvar:`PROJ_NETWORK` environment variable is set to ``ON``,
+:program:`cct` will attempt to use remote grids stored on CDN (Content
+Delivery Network) storage, when they are not available locally.
+
+More details are available in the :ref:`network` section.
 
 Examples
 ********
@@ -147,6 +194,20 @@ Should give results comparable to the classic :program:`proj` command
     $ echo 12 56 100 2018.0 auxiliary data | cct +proj=merc
     1335833.8895   7522963.2411      100.0000     2018.0000 auxiliary data
 
+7. Coordinate operation referenced through its code
+
+.. code-block:: console
+
+    $ echo 3541657.3778 948984.2343 5201383.5231 2020.5 | cct EPSG:8366
+    3541657.9112    948983.7503  5201383.2482     2020.5000
+
+8. Coordinate operation referenced through its name
+
+.. code-block:: console
+
+    $ echo 3541657.3778 948984.2343 5201383.5231 2020.5 | cct "ITRF2014 to ETRF2014 (1)"
+    3541657.9112    948983.7503  5201383.2482     2020.5000
+
 Background
 **********
 
@@ -179,7 +240,7 @@ Hence, in honour of *cct* (the geodesist) this is :program:`cct` (the program).
     See also
     ********
 
-    **proj(1)**, **cs2cs(1)**, **geod(1)**, **gie(1)**, **projinfo(1)**
+    **proj(1)**, **cs2cs(1)**, **geod(1)**, **gie(1)**, **projinfo(1)**, **projsync(1)**
 
     Bugs
     ****

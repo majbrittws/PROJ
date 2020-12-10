@@ -115,7 +115,7 @@ There are however exceptions, especially when dealing with coordinate systems th
 don't align with the cardinal directions of a compass. For example it is not
 obvious which coordinate component aligns to which axis in a skewed coordinate
 system with a 45 degrees angle against the north direction. Similarly, a geocentric
-cartesain coordinate system usually has the z-component aligned with the rotational
+cartesian coordinate system usually has the z-component aligned with the rotational
 axis of the earth and hence the axis points towards north. Both cases are
 incompatible with the convention of always having the x-component be the east/west
 axis, the y-component the north/south axis and the z-component the up/down axis.
@@ -172,3 +172,22 @@ paths.  In most cases, the following paths are checked in order:
 Note that if you're using conda, activating an environment sets
 :envvar:`PROJ_LIB` to a resource directory located in that environment.
 
+
+What happened to PROJ.4?
+--------------------------------------------------------------------------------
+
+The first incarnation of PROJ saw the light of day in 1983. Back then it
+was simply known as PROJ. Eventually a new version was released, known
+as PROJ.2 in order to distinguish between the two versions. Later on both
+PROJ.3 and PROJ.4 was released. By the time PROJ.4 was released the
+software had matured enough that a new major version release wasn't an
+immediate necesity. PROJ.4 was around for more than 25 years before it
+again became time for an update. This left the project in a bit of a
+conundrum regarding the name. For the majority of the life-time of the product it was known as PROJ.4, but with the release of version 5 the name
+was no longer aligned with the version number. As a consequence, it was
+decided to decouple the name from the version number and once again simply
+call the software PROJ.
+
+Use of name PROJ.4 is now strictly reserved for describing legacy behavior
+of the software, e.g. "PROJ.4 strings" as seen in :program:`projinfo`
+output.

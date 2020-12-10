@@ -88,8 +88,9 @@ static PJ_XY lcca_e_forward (PJ_LP lp, PJ *P) {          /* Ellipsoidal, forward
     S = pj_mlfn(lp.phi, sin(lp.phi), cos(lp.phi), Q->en) - Q->M0;
     dr = fS(S, Q->C);
     r = Q->r0 - dr;
-    xy.x = P->k0 * (r * sin( lp.lam *= Q->l ) );
-    xy.y = P->k0 * (Q->r0 - r * cos(lp.lam) );
+    const double lam_mul_l = lp.lam * Q->l;
+    xy.x = P->k0 * (r * sin(lam_mul_l));
+    xy.y = P->k0 * (Q->r0 - r * cos(lam_mul_l) );
     return xy;
 }
 
@@ -127,14 +128,14 @@ static PJ *destructor (PJ *P, int errlev) {
     if (nullptr==P->opaque)
         return pj_default_destructor (P, errlev);
 
-    pj_dealloc (static_cast<struct pj_opaque*>(P->opaque)->en);
+    free (static_cast<struct pj_opaque*>(P->opaque)->en);
     return pj_default_destructor (P, errlev);
 }
 
 
 PJ *PROJECTION(lcca) {
     double s2p0, N0, R0, tan0;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;

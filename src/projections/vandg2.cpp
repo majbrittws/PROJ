@@ -24,7 +24,8 @@ static PJ_XY vandg2_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forwa
     double x1, at, bt, ct;
 
     bt = fabs(M_TWO_D_PI * lp.phi);
-    if ((ct = 1. - bt * bt) < 0.)
+    ct = 1. - bt * bt;
+    if (ct < 0.)
         ct = 0.;
     else
         ct = sqrt(ct);
@@ -52,7 +53,7 @@ static PJ_XY vandg2_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forwa
 
 
 PJ *PROJECTION(vandg2) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
@@ -64,7 +65,7 @@ PJ *PROJECTION(vandg2) {
 }
 
 PJ *PROJECTION(vandg3) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;

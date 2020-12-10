@@ -164,7 +164,8 @@ static double decimalyear_to_mjd(double decimalyear) {
     double fractional_year;
     double mjd;
 
-    if( decimalyear < -10000 || decimalyear > 10000 )
+    // Written this way to deal with NaN input
+    if( !(decimalyear >= -10000 && decimalyear <= 10000) )
         return 0;
 
     year = lround(floor(decimalyear));
@@ -392,9 +393,7 @@ static double get_unit_conversion_factor(const char* name,
 /***********************************************************************/
     int i;
     const char* s;
-    const PJ_UNITS *units;
-
-    units = proj_list_units();
+    const PJ_UNITS *units = pj_list_linear_units();
 
     /* Try first with linear units */
     for (i = 0; (s = units[i].id) ; ++i) {
@@ -410,7 +409,7 @@ static double get_unit_conversion_factor(const char* name,
     }
 
     /* And then angular units */
-    units = proj_list_angular_units();
+    units = pj_list_angular_units();
     for (i = 0; (s = units[i].id) ; ++i) {
         if ( strcmp(s, name) == 0 ) {
             if( p_normalized_name ) {
@@ -434,7 +433,7 @@ static double get_unit_conversion_factor(const char* name,
 /***********************************************************************/
 PJ *CONVERSION(unitconvert,0) {
 /***********************************************************************/
-    struct pj_opaque_unitconvert *Q = static_cast<struct pj_opaque_unitconvert*>(pj_calloc (1, sizeof (struct pj_opaque_unitconvert)));
+    struct pj_opaque_unitconvert *Q = static_cast<struct pj_opaque_unitconvert*>(calloc (1, sizeof (struct pj_opaque_unitconvert)));
     const char *s, *name;
     int i;
     double f;
@@ -470,30 +469,38 @@ PJ *CONVERSION(unitconvert,0) {
         const char* normalized_name = nullptr;
         f = get_unit_conversion_factor(name, &xy_in_is_linear, &normalized_name);
         if (f != 0.0) {
-            proj_log_debug(P, "xy_in unit: %s", normalized_name);
+            proj_log_trace(P, "xy_in unit: %s", normalized_name);
         } else {
             f = pj_param (P->ctx, P->params, "dxy_in").f;
             if (f == 0.0 || 1.0 / f == 0.0)
                 return pj_default_destructor(P, PJD_ERR_UNKNOWN_UNIT_ID);
         }
         Q->xy_factor = f;
-        if (normalized_name != nullptr && strcmp(normalized_name, "Radian") == 0)
-            P->left = PJ_IO_UNITS_RADIANS;
+        if (normalized_name != nullptr) {
+            if (strcmp(normalized_name, "Radian") == 0)
+                P->left = PJ_IO_UNITS_RADIANS;
+            if (strcmp(normalized_name, "Degree") == 0)
+                P->left = PJ_IO_UNITS_DEGREES;
+        }
     }
 
     if ((name = pj_param (P->ctx, P->params, "sxy_out").s) != nullptr) {
         const char* normalized_name = nullptr;
         f = get_unit_conversion_factor(name, &xy_out_is_linear, &normalized_name);
         if (f != 0.0) {
-            proj_log_debug(P, "xy_out unit: %s", normalized_name);
+            proj_log_trace(P, "xy_out unit: %s", normalized_name);
         } else {
             f = pj_param (P->ctx, P->params, "dxy_out").f;
             if (f == 0.0 || 1.0 / f == 0.0)
                 return pj_default_destructor(P, PJD_ERR_UNKNOWN_UNIT_ID);
         }
         Q->xy_factor /= f;
-        if (normalized_name != nullptr && strcmp(normalized_name, "Radian") == 0)
-            P->right= PJ_IO_UNITS_RADIANS;
+        if (normalized_name != nullptr) {
+            if (strcmp(normalized_name, "Radian") == 0)
+                P->right= PJ_IO_UNITS_RADIANS;
+            if (strcmp(normalized_name, "Degree") == 0)
+                P->right= PJ_IO_UNITS_DEGREES;
+        }
     }
 
     if( xy_in_is_linear >= 0 && xy_out_is_linear >= 0 &&
@@ -506,7 +513,7 @@ PJ *CONVERSION(unitconvert,0) {
         const char* normalized_name = nullptr;
         f = get_unit_conversion_factor(name, &z_in_is_linear, &normalized_name);
         if (f != 0.0) {
-            proj_log_debug(P, "z_in unit: %s", normalized_name);
+            proj_log_trace(P, "z_in unit: %s", normalized_name);
         } else {
             f = pj_param (P->ctx, P->params, "dz_in").f;
             if (f == 0.0 || 1.0 / f == 0.0)
@@ -519,7 +526,7 @@ PJ *CONVERSION(unitconvert,0) {
         const char* normalized_name = nullptr;
         f = get_unit_conversion_factor(name, &z_out_is_linear, &normalized_name);
         if (f != 0.0) {
-            proj_log_debug(P, "z_out unit: %s", normalized_name);
+            proj_log_trace(P, "z_out unit: %s", normalized_name);
         } else {
             f = pj_param (P->ctx, P->params, "dz_out").f;
             if (f == 0.0 || 1.0 / f == 0.0)
@@ -540,7 +547,7 @@ PJ *CONVERSION(unitconvert,0) {
         if (!s) return pj_default_destructor(P, PJD_ERR_UNKNOWN_UNIT_ID); /* unknown unit conversion id */
 
         Q->t_in_id = i;
-        proj_log_debug(P, "t_in unit: %s", time_units[i].name);
+        proj_log_trace(P, "t_in unit: %s", time_units[i].name);
     }
 
     s = nullptr;
@@ -550,7 +557,7 @@ PJ *CONVERSION(unitconvert,0) {
         if (!s) return pj_default_destructor(P, PJD_ERR_UNKNOWN_UNIT_ID); /* unknown unit conversion id */
 
         Q->t_out_id = i;
-        proj_log_debug(P, "t_out unit: %s", time_units[i].name);
+        proj_log_trace(P, "t_out unit: %s", time_units[i].name);
     }
 
     return P;

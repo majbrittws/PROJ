@@ -11,7 +11,6 @@ Python
 `pyproj <https://pypi.python.org/pypi/pyproj>`_:
 Python interface (wrapper for PROJ)
 
-
 Ruby
 =======
 
@@ -24,6 +23,16 @@ Rust
 `proj <https://github.com/georust/proj>`_:
 Rust bindings for the latest stable version of PROJ
 
+Go (Golang)
+===========
+`go-proj <https://github.com/everystreet/go-proj>`_:
+Go bindings and idiomatic wrapper for PROJ
+
+Julia
+=====
+`Proj4.jl <https://github.com/JuliaGeo/Proj4.jl>`_"
+Low-level bindings and a Julian API over PROJ.
+
 TCL
 ========
 `proj4tcl <http://wiki.tcl.tk/41270>`_:
@@ -34,7 +43,6 @@ MySQL
 
 `fProj4 <https://sourceforge.net/projects/mysqlscientific/files/fPROJ4/>`_:
 Bindings for PROJ in MySQL
-
 
 Excel
 ========

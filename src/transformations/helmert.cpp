@@ -53,7 +53,6 @@ Last update: 2018-10-26
 #include <math.h>
 
 #include "proj_internal.h"
-#include "geocent.h"
 
 PROJ_HEAD(helmert, "3(6)-, 4(8)- and 7(14)-parameter Helmert shift");
 PROJ_HEAD(molobadekas, "Molodensky-Badekas transformation");
@@ -374,7 +373,7 @@ static PJ_XYZ helmert_forward_3d (PJ_LPZ lpz, PJ *P) {
         return point.xyz;
     }
 
-    if (Q->no_rotation) {
+    if (Q->no_rotation && Q->scale == 0) {
         point.xyz.x = lpz.lam + Q->xyz.x;
         point.xyz.y = lpz.phi + Q->xyz.y;
         point.xyz.z = lpz.z   + Q->xyz.z;
@@ -414,7 +413,7 @@ static PJ_LPZ helmert_reverse_3d (PJ_XYZ xyz, PJ *P) {
         return point.lpz;
     }
 
-    if (Q->no_rotation) {
+    if (Q->no_rotation && Q->scale == 0) {
         point.xyz.x  =  xyz.x - Q->xyz.x;
         point.xyz.y  =  xyz.y - Q->xyz.y;
         point.xyz.z  =  xyz.z - Q->xyz.z;
@@ -477,7 +476,7 @@ static PJ_COORD helmert_reverse_4d (PJ_COORD point, PJ *P) {
 
 
 static PJ* init_helmert_six_parameters(PJ* P) {
-    struct pj_opaque_helmert *Q = static_cast<struct pj_opaque_helmert*>(pj_calloc (1, sizeof (struct pj_opaque_helmert)));
+    struct pj_opaque_helmert *Q = static_cast<struct pj_opaque_helmert*>(calloc (1, sizeof (struct pj_opaque_helmert)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = (void *) Q;
@@ -655,7 +654,7 @@ PJ *TRANSFORMATION(helmert, 0) {
     Q->scale  =  Q->scale_0;
     Q->theta  =  Q->theta_0;
 
-    if ((Q->opk.o==0)  && (Q->opk.p==0)  && (Q->opk.k==0) && (Q->scale==0) &&
+    if ((Q->opk.o==0)  && (Q->opk.p==0)  && (Q->opk.k==0) &&
         (Q->dopk.o==0) && (Q->dopk.p==0) && (Q->dopk.k==0)) {
         Q->no_rotation = 1;
     }
@@ -665,22 +664,18 @@ PJ *TRANSFORMATION(helmert, 0) {
     }
 
     /* Let's help with debugging */
-    if (proj_log_level(P->ctx, PJ_LOG_TELL) >= PJ_LOG_DEBUG) {
-        proj_log_debug(P, "Helmert parameters:");
-        proj_log_debug(P, "x=  %8.5f  y=  %8.5f  z=  %8.5f", Q->xyz.x, Q->xyz.y, Q->xyz.z);
-        proj_log_debug(P, "rx= %8.5f  ry= %8.5f  rz= %8.5f",
+    if (proj_log_level(P->ctx, PJ_LOG_TELL) >= PJ_LOG_TRACE) {
+        proj_log_trace(P, "Helmert parameters:");
+        proj_log_trace(P, "x=  %8.5f  y=  %8.5f  z=  %8.5f", Q->xyz.x, Q->xyz.y, Q->xyz.z);
+        proj_log_trace(P, "rx= %8.5f  ry= %8.5f  rz= %8.5f",
                 Q->opk.o / ARCSEC_TO_RAD, Q->opk.p / ARCSEC_TO_RAD, Q->opk.k / ARCSEC_TO_RAD);
-        proj_log_debug(P, "s=  %8.5f  exact=%d%s", Q->scale, Q->exact,
+        proj_log_trace(P, "s=  %8.5f  exact=%d%s", Q->scale, Q->exact,
                        Q->no_rotation ? "" :
                        Q->is_position_vector ? "  convention=position_vector" :
                        "  convention=coordinate_frame");
-        proj_log_debug(P, "dx= %8.5f  dy= %8.5f  dz= %8.5f",   Q->dxyz.x, Q->dxyz.y, Q->dxyz.z);
-        proj_log_debug(P, "drx=%8.5f  dry=%8.5f  drz=%8.5f",   Q->dopk.o, Q->dopk.p, Q->dopk.k);
-        proj_log_debug(P, "ds= %8.5f  t_epoch=%8.5f", Q->dscale, Q->t_epoch);
-    }
-
-    if (Q->no_rotation) {
-        return P;
+        proj_log_trace(P, "dx= %8.5f  dy= %8.5f  dz= %8.5f",   Q->dxyz.x, Q->dxyz.y, Q->dxyz.z);
+        proj_log_trace(P, "drx=%8.5f  dry=%8.5f  drz=%8.5f",   Q->dopk.o, Q->dopk.p, Q->dopk.k);
+        proj_log_trace(P, "ds= %8.5f  t_epoch=%8.5f", Q->dscale, Q->t_epoch);
     }
 
     update_parameters(P);
@@ -729,15 +724,15 @@ PJ *TRANSFORMATION(molobadekas, 0) {
 
 
     /* Let's help with debugging */
-    if (proj_log_level(P->ctx, PJ_LOG_TELL) >= PJ_LOG_DEBUG) {
-        proj_log_debug(P, "Molodensky-Badekas parameters:");
-        proj_log_debug(P, "x=  %8.5f  y=  %8.5f  z=  %8.5f", Q->xyz_0.x, Q->xyz_0.y, Q->xyz_0.z);
-        proj_log_debug(P, "rx= %8.5f  ry= %8.5f  rz= %8.5f",
+    if (proj_log_level(P->ctx, PJ_LOG_TELL) >= PJ_LOG_TRACE) {
+        proj_log_trace(P, "Molodensky-Badekas parameters:");
+        proj_log_trace(P, "x=  %8.5f  y=  %8.5f  z=  %8.5f", Q->xyz_0.x, Q->xyz_0.y, Q->xyz_0.z);
+        proj_log_trace(P, "rx= %8.5f  ry= %8.5f  rz= %8.5f",
                 Q->opk.o / ARCSEC_TO_RAD, Q->opk.p / ARCSEC_TO_RAD, Q->opk.k / ARCSEC_TO_RAD);
-        proj_log_debug(P, "s=  %8.5f  exact=%d%s", Q->scale, Q->exact,
+        proj_log_trace(P, "s=  %8.5f  exact=%d%s", Q->scale, Q->exact,
                        Q->is_position_vector ? "  convention=position_vector" :
                        "  convention=coordinate_frame");
-        proj_log_debug(P, "px= %8.5f  py= %8.5f  pz= %8.5f",   Q->refp.x, Q->refp.y, Q->refp.z);
+        proj_log_trace(P, "px= %8.5f  py= %8.5f  pz= %8.5f",   Q->refp.x, Q->refp.y, Q->refp.z);
     }
 
     /* as an optimization, we incorporate the refp in the translation terms */

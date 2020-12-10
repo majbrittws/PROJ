@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "CS2CS" "1" "Aug 26, 2019" "6.2.0" "PROJ"
+.TH "CS2CS" "1" "Nov 01, 2020" "7.2.0" "PROJ"
 .SH NAME
 cs2cs \- Cartographic coordinate system filter
 .
@@ -40,26 +40,51 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 or
 .INDENT 0.0
 .INDENT 3.5
-\fBcs2cs\fP [\fB\-eEfIlrstvwW\fP [args]] {source_crs} +to {target_crs} file ...
+\fBcs2cs\fP [\fB\-eEfIlrstvwW\fP [args]] {source_crs} {target_crs} file ...
 .sp
-where {source_crs} or {target_crs} is a PROJ string, a WKT string or a AUTHORITY:CODE
-(where AUTHORITY is the name of a CRS authority and CODE the code of a CRS
-found in the proj.db database), expressing a coordinate reference system.
-.UNINDENT
+where {source_crs} or {target_crs} is one of the possibilities accepted
+by \fBproj_create()\fP, provided it expresses a CRS
+.INDENT 0.0
+.IP \(bu 2
+a proj\-string,
+.IP \(bu 2
+a WKT string,
+.IP \(bu 2
+an object code (like "EPSG:4326", "urn:ogc:def:crs:EPSG::4326",
+"urn:ogc:def:coordinateOperation:EPSG::1671"),
+.IP \(bu 2
+an Object name. e.g "WGS 84", "WGS 84 / UTM zone 31N". In that case as
+uniqueness is not guaranteed, heuristics are applied to determine the appropriate best match.
+.IP \(bu 2
+a OGC URN combining references for compound coordinate reference systems
+(e.g "\fI\%urn:ogc:def:crs,crs:EPSG::2393,crs:EPSG::5717\fP" or custom abbreviated
+syntax "EPSG:2393+5717"),
+.IP \(bu 2
+a OGC URN combining references for references for projected or derived CRSs
+e.g. for Projected 3D CRS "UTM zone 31N / WGS 84 (3D)":
+"\fI\%urn:ogc:def:crs,crs:EPSG::4979,cs:PROJ::ENh,coordinateOperation:EPSG::16031\fP"
+(\fIadded in 6.2\fP)
+.IP \(bu 2
+a OGC URN combining references for concatenated operations
+(e.g. "\fI\%urn:ogc:def:coordinateOperation,coordinateOperation:EPSG::3895,coordinateOperation:EPSG::1618\fP")
+.IP \(bu 2
+a PROJJSON string. The jsonschema is at \fI\%https://proj.org/schemas/v0.2/projjson.schema.json\fP (\fIadded in 6.2\fP)
+.IP \(bu 2
+a compound CRS made from two object names separated with " + ". e.g. "WGS 84 + EGM96 height" (\fIadded in 7.1\fP)
 .UNINDENT
 .sp
 New in version 6.0.0.
 
 .sp
-or
+\fBNOTE:\fP
 .INDENT 0.0
 .INDENT 3.5
-\fBcs2cs\fP [\fB\-eEfIlrstvwW\fP [args]] {source_crs} {target_crs}
+before 7.0.1, it was needed to add +to between {source_crs} and {target_crs}
+when adding a filename
 .UNINDENT
 .UNINDENT
-.sp
-New in version 6.0.0.
-
+.UNINDENT
+.UNINDENT
 .SH DESCRIPTION
 .sp
 \fBcs2cs\fP performs transformation between the source and destination
@@ -84,10 +109,11 @@ ASCII input only. (# is the default value).
 .INDENT 0.0
 .TP
 .B \-d <n>
-.UNINDENT
-.sp
-New in version 5.2.0: Specify the number of decimals in the output.
+New in version 5.2.0.
 
+.sp
+Specify the number of decimals in the output.
+.UNINDENT
 .INDENT 0.0
 .TP
 .B \-e <string>
@@ -130,20 +156,19 @@ List of all distance units that can be selected with the \fI+units\fP parameter.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-ld
-List of datums that can be selected with the \fI+datum\fP parameter.
-.UNINDENT
-.INDENT 0.0
-.TP
 .B \-r
-This options reverses the order of the expected input from
-longitude\-latitude or x\-y to latitude\-longitude or y\-x.
+This options reverses the order of the first two expected
+inputs from that specified by the CRS to the opposite
+order.  The third coordinate, typically height, remains
+third.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-s
-This options reverses the order of the output from x\-y or longitude\-latitude
-to y\-x or latitude\-longitude.
+This options reverses the order of the first two expected
+outputs from that specified by the CRS to the opposite
+order.  The third coordinate, typically height, remains
+third.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -210,6 +235,16 @@ ellipsoid major axis or sphere radius units. Output geographic coordinates will
 normally be in DMS format (use \fB\-f %.12f\fP for decimal degrees with 12 decimal
 places), while projected (cartesian) coordinates will be in linear
 (meter, feet) units.
+.SS Use of remote grids
+.sp
+New in version 7.0.0.
+
+.sp
+If the \fBPROJ_NETWORK\fP environment variable is set to \fBON\fP,
+\fBcs2cs\fP will attempt to use remote grids stored on CDN (Content
+Delivery Network) storage, when they are not available locally.
+.sp
+More details are available in the network section.
 .SH EXAMPLES
 .SS Using PROJ strings
 .sp
@@ -243,7 +278,7 @@ The x\-y output data will appear as three lines of:
 .fi
 .UNINDENT
 .UNINDENT
-.SS Using EPSG codes
+.SS Using EPSG CRS codes
 .sp
 Transforming from WGS 84 latitude/longitude (in that order) to UTM Zone 31N/WGS 84
 .INDENT 0.0
@@ -270,9 +305,35 @@ outputs
 .fi
 .UNINDENT
 .UNINDENT
+.SS Using EPSG CRS names
+.sp
+Transforming from WGS 84 latitude/longitude (in that order) with EGM96 height to
+UTM Zone 31N/WGS 84 with WGS84 ellipsoidal height
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+echo 45 2 0 | cs2cs "WGS 84 + EGM96 height" "WGS 84 / UTM zone 31N"
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+outputs
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+421184.70   4983436.77 50.69
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
 .SH SEE ALSO
 .sp
-\fBproj(1)\fP, \fBcct(1)\fP, \fBgeod(1)\fP, \fBgie(1)\fP, \fBprojinfo(1)\fP
+\fBproj(1)\fP, \fBcct(1)\fP, \fBgeod(1)\fP, \fBgie(1)\fP, \fBprojinfo(1)\fP, \fBprojsync(1)\fP
 .SH BUGS
 .sp
 A list of know bugs can be found at \fI\%https://github.com/OSGeo/PROJ/issues\fP
@@ -283,6 +344,6 @@ where new bug reports can be submitted to.
 .SH AUTHOR
 Frank Warmerdam
 .SH COPYRIGHT
-1983-2019
+1983-2020
 .\" Generated by docutils manpage writer.
 .

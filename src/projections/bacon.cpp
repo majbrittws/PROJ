@@ -23,26 +23,27 @@ PROJ_HEAD(bacon, "Bacon Globular") "\n\tMisc Sph, no inv";
 static PJ_XY bacon_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward */
     PJ_XY xy = {0.0,0.0};
     struct pj_opaque *Q = static_cast<struct pj_opaque*>(P->opaque);
-	double ax, f;
+    double ax, f;
 
-	xy.y = Q->bacn ? M_HALFPI * sin(lp.phi) : lp.phi;
-	if ((ax = fabs(lp.lam)) >= EPS) {
-		if (Q->ortl && ax >= M_HALFPI)
-			xy.x = sqrt(HLFPI2 - lp.phi * lp.phi + EPS) + ax - M_HALFPI;
-		else {
-			f = 0.5 * (HLFPI2 / ax + ax);
-			xy.x = ax - f + sqrt(f * f - xy.y * xy.y);
-		}
-		if (lp.lam < 0.) xy.x = - xy.x;
-	} else
-		xy.x = 0.;
-	return (xy);
+    xy.y = Q->bacn ? M_HALFPI * sin(lp.phi) : lp.phi;
+    ax = fabs(lp.lam);
+    if (ax >= EPS) {
+        if (Q->ortl && ax >= M_HALFPI)
+            xy.x = sqrt(HLFPI2 - lp.phi * lp.phi + EPS) + ax - M_HALFPI;
+        else {
+            f = 0.5 * (HLFPI2 / ax + ax);
+            xy.x = ax - f + sqrt(f * f - xy.y * xy.y);
+        }
+        if (lp.lam < 0.) xy.x = - xy.x;
+    } else
+        xy.x = 0.;
+    return (xy);
 }
 
 
 
 PJ *PROJECTION(bacon) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
@@ -56,7 +57,7 @@ PJ *PROJECTION(bacon) {
 
 
 PJ *PROJECTION(apian) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
@@ -69,7 +70,7 @@ PJ *PROJECTION(apian) {
 
 
 PJ *PROJECTION(ortel) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;

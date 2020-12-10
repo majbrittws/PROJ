@@ -40,6 +40,8 @@
 #include "proj/internal/internal.hpp"
 #include "proj/internal/io_internal.hpp"
 
+#include "proj_json_streaming_writer.hpp"
+
 #include <map>
 #include <memory>
 #include <set>
@@ -396,26 +398,26 @@ void CoordinateSystemAxis::_exportToWKT(io::WKTFormatter *formatter, int order,
 void CoordinateSystemAxis::_exportToJSON(
     io::JSONFormatter *formatter) const // throw(FormattingException)
 {
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
     auto objectContext(
         formatter->MakeObjectContext("Axis", !identifiers().empty()));
 
-    writer.AddObjKey("name");
-    writer.Add(nameStr());
+    writer->AddObjKey("name");
+    writer->Add(nameStr());
 
-    writer.AddObjKey("abbreviation");
-    writer.Add(abbreviation());
+    writer->AddObjKey("abbreviation");
+    writer->Add(abbreviation());
 
-    writer.AddObjKey("direction");
-    writer.Add(direction().toString());
+    writer->AddObjKey("direction");
+    writer->Add(direction().toString());
 
     const auto &l_unit(unit());
     if (l_unit == common::UnitOfMeasure::METRE ||
         l_unit == common::UnitOfMeasure::DEGREE) {
-        writer.AddObjKey("unit");
-        writer.Add(l_unit.name());
+        writer->AddObjKey("unit");
+        writer->Add(l_unit.name());
     } else if (l_unit.type() != common::UnitOfMeasure::Type::NONE) {
-        writer.AddObjKey("unit");
+        writer->AddObjKey("unit");
         l_unit._exportToJSON(formatter);
     }
 
@@ -429,8 +431,8 @@ void CoordinateSystemAxis::_exportToJSON(
 
 //! @cond Doxygen_Suppress
 bool CoordinateSystemAxis::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherCSA = dynamic_cast<const CoordinateSystemAxis *>(other);
     if (otherCSA == nullptr) {
         return false;
@@ -441,7 +443,7 @@ bool CoordinateSystemAxis::_isEquivalentTo(
         return false;
     }
     if (criterion == util::IComparable::Criterion::STRICT) {
-        if (!IdentifiedObject::_isEquivalentTo(other, criterion)) {
+        if (!IdentifiedObject::_isEquivalentTo(other, criterion, dbContext)) {
             return false;
         }
         if (abbreviation() != otherCSA->abbreviation()) {
@@ -573,19 +575,21 @@ void CoordinateSystem::_exportToWKT(
 void CoordinateSystem::_exportToJSON(
     io::JSONFormatter *formatter) const // throw(FormattingException)
 {
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
     auto objectContext(formatter->MakeObjectContext("CoordinateSystem",
                                                     !identifiers().empty()));
 
-    writer.AddObjKey("subtype");
-    writer.Add(getWKT2Type(true));
+    writer->AddObjKey("subtype");
+    writer->Add(getWKT2Type(true));
 
-    writer.AddObjKey("axis");
-    auto axisContext(writer.MakeArrayContext(false));
-    const auto &l_axisList = axisList();
-    for (auto &axis : l_axisList) {
-        formatter->setOmitTypeInImmediateChild();
-        axis->_exportToJSON(formatter);
+    writer->AddObjKey("axis");
+    {
+        auto axisContext(writer->MakeArrayContext(false));
+        const auto &l_axisList = axisList();
+        for (auto &axis : l_axisList) {
+            formatter->setOmitTypeInImmediateChild();
+            axis->_exportToJSON(formatter);
+        }
     }
 
     if (formatter->outputId()) {
@@ -599,11 +603,11 @@ void CoordinateSystem::_exportToJSON(
 
 //! @cond Doxygen_Suppress
 bool CoordinateSystem::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherCS = dynamic_cast<const CoordinateSystem *>(other);
     if (otherCS == nullptr ||
-        !IdentifiedObject::_isEquivalentTo(other, criterion)) {
+        !IdentifiedObject::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     const auto &list = axisList();
@@ -615,7 +619,8 @@ bool CoordinateSystem::_isEquivalentTo(
         return false;
     }
     for (size_t i = 0; i < list.size(); i++) {
-        if (!list[i]->_isEquivalentTo(otherList[i].get(), criterion)) {
+        if (!list[i]->_isEquivalentTo(otherList[i].get(), criterion,
+                                      dbContext)) {
             return false;
         }
     }

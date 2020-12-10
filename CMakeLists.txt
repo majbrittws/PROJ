@@ -9,15 +9,15 @@
 ################################################################################
 # General settings
 ################################################################################
-cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 
-# For historic reasons, the CMake PROJECT-NAME is PROJ4
-project(PROJ4 LANGUAGES C CXX)
-set(PROJECT_INTERN_NAME PROJ)
+project(PROJ
+  DESCRIPTION "PROJ coordinate transformation software library"
+  LANGUAGES C CXX
+)
 
-if(NOT CMAKE_VERSION VERSION_LESS 3.1)
-  cmake_policy(SET CMP0054 NEW)
-endif()
+# Only interpret if() arguments as variables or keywords when unquoted
+cmake_policy(SET CMP0054 NEW)
 
 # Set C++ version
 # Make CMAKE_CXX_STANDARD available as cache option overridable by user
@@ -36,6 +36,13 @@ message(STATUS "Requiring C${CMAKE_C_STANDARD}")
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 message(STATUS "Requiring C${CMAKE_C_STANDARD} - done")
+
+set(CMAKE_SKIP_BUILD_RPATH FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+if(APPLE)
+    set(MACOSX_RPATH ON)
+endif()
 
 # Set global -fvisibility=hidden
 set(CMAKE_C_VISIBILITY_PRESET hidden)
@@ -83,6 +90,7 @@ elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Intel")
     set(PROJ_CXX_WARN_FLAGS -Wall)
   endif()
 endif()
+
 set(PROJ_C_WARN_FLAGS "${PROJ_C_WARN_FLAGS}"
   CACHE STRING "C flags used to compile PROJ targets")
 set(PROJ_CXX_WARN_FLAGS "${PROJ_CXX_WARN_FLAGS}"
@@ -92,20 +100,19 @@ set(PROJ_CXX_WARN_FLAGS "${PROJ_CXX_WARN_FLAGS}"
 # PROJ CMake modules
 ################################################################################
 # Path to additional CMake modules
-set(CMAKE_MODULE_PATH ${PROJ4_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
+set(CMAKE_MODULE_PATH ${PROJ_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
 
 include(ProjUtilities)
 
-message(STATUS "")
-colormsg(_HIBLUE_ "Configuring PROJ:")
+message(STATUS "Configuring PROJ:")
 
 ################################################################################
 #PROJ version information
 ################################################################################
 include(ProjVersion)
-proj_version(MAJOR 7 MINOR 0 PATCH 0)
-set(PROJ_API_VERSION "17")
-set(PROJ_BUILD_VERSION "17.0.2")
+proj_version(MAJOR 8 MINOR 0 PATCH 0)
+set(PROJ_API_VERSION "19")
+set(PROJ_BUILD_VERSION "21.0.2")
 
 ################################################################################
 # Build features and variants
@@ -125,6 +132,48 @@ endif()
 find_package(Sqlite3 REQUIRED)
 if(NOT SQLITE3_FOUND)
   message(SEND_ERROR "sqlite3 dependency not found!")
+endif()
+
+# Would build and run with older versions, but with horrible performance
+# See https://github.com/OSGeo/PROJ/issues/1718
+if("${SQLITE3_VERSION}" VERSION_LESS "3.11")
+  message(SEND_ERROR "sqlite3 >= 3.11 required!")
+endif()
+
+################################################################################
+# Check for libtiff
+################################################################################
+
+option(ENABLE_TIFF "Enable TIFF support to read some grids" ON)
+mark_as_advanced(ENABLE_TIFF)
+set(TIFF_ENABLED FALSE)
+if(ENABLE_TIFF)
+  find_package(TIFF REQUIRED)
+  if(TIFF_FOUND)
+    set(TIFF_ENABLED TRUE)
+  else()
+    message(SEND_ERROR
+      "libtiff dependency not found! Use ENABLE_TIFF=OFF to force it off")
+  endif()
+else()
+  message(WARNING
+    "TIFF support is not enabled and will result in the inability to read "
+    "some grids")
+endif()
+
+################################################################################
+# Check for curl
+################################################################################
+
+option(ENABLE_CURL "Enable Curl support" ON)
+set(CURL_ENABLED FALSE)
+if(ENABLE_CURL)
+  find_package(CURL REQUIRED)
+  if(CURL_FOUND)
+    set(CURL_ENABLED TRUE)
+  else()
+    message(SEND_ERROR "curl dependency not found!")
+  endif()
 endif()
 
 ################################################################################
@@ -172,20 +221,13 @@ if(MSVC OR CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_DEBUG_POSTFIX _d)
 endif()
 
-option(PROJ_TESTS "Enable build of collection of PROJ tests" ON)
-boost_report_value(PROJ_TESTS)
-if(PROJ_TESTS)
-  enable_testing()
-endif()
-include(ProjTest)
-
 # Put the libraries and binaries that get built into directories at the
 # top of the build tree rather than in hard-to-find leaf
 # directories. This simplifies manual testing and the use of the build
-# tree rather than installed Boost libraries.
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+# tree rather than installed PROJ libraries.
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJ_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJ_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJ_BINARY_DIR}/bin)
 link_directories(${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
 
 ################################################################################
@@ -203,19 +245,39 @@ set(DOCDIR "${DEFAULT_DOCDIR}"
 set(INCLUDEDIR "${DEFAULT_INCLUDEDIR}"
   CACHE PATH "The directory to install includes into.")
 set(CMAKECONFIGDIR "${DEFAULT_CMAKEDIR}"
-  CACHE PATH "The directory to install cmake config files into.")
+  CACHE PATH "Parent of the directory to install cmake config files into.")
+
+################################################################################
+# Tests
+################################################################################
+include(CTest)
+
+# Support older option, to be removed by PROJ 8.0
+if(DEFINED PROJ_TESTS)
+  message(DEPRECATION "PROJ_TESTS has been replaced with BUILD_TESTING")
+  set(BUILD_TESTING ${PROJ_TESTS})
+endif()
+
+if(BUILD_TESTING)
+  include(ProjTest)
+else()
+  message(STATUS "Testing disabled")
+endif()
 
 ################################################################################
 # Build configured components
 ################################################################################
-include_directories(${PROJ4_SOURCE_DIR}/src)
+include_directories(${PROJ_SOURCE_DIR}/src)
 
-message(STATUS "")
 add_subdirectory(data)
 add_subdirectory(include)
 add_subdirectory(src)
 add_subdirectory(man)
 add_subdirectory(cmake)
-if(PROJ_TESTS)
+if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
+
+set(docfiles COPYING NEWS AUTHORS)
+install(FILES ${docfiles}
+        DESTINATION "${DOCDIR}")

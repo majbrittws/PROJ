@@ -4,10 +4,10 @@
 Known differences between versions
 ================================================================================
 
-Once in a while, a new version of PROJ causes changes in the existing behaviour.
+Once in a while, a new version of PROJ causes changes in the existing behavior.
 In this section we track deliberate changes to PROJ that break from previous
-behaviour. Most times that will be caused by a bug fix. Unfortunately, some bugs
-have existed for so long that their faulty behaviour is relied upon by software
+behavior. Most times that will be caused by a bug fix. Unfortunately, some bugs
+have existed for so long that their faulty behavior is relied upon by software
 that uses PROJ.
 
 Behavioural changes caused by new bugs are not tracked here, as they should be
@@ -57,7 +57,7 @@ rotation of the circle larger than :math:`\lambda=-70^{\circ}` and hence
 should return the same output for both.
 
 Adding the ``+over`` flag to the projection definition provides
-the old behaviour.
+the old behavior.
 
 Version 6.0.0
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -114,3 +114,34 @@ exclusive with :option:`+t_epoch`. :option:`+dt` is used when deformation
 for a set amount of time is needed and :option:`+t_epoch` is used (in
 conjunction with the observation time of the input coordinate) when
 deformation from a specific epoch to the observation time is needed.
+
+Version 6.3.0
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+projinfo
+--------
+
+Before PROJ 6.3.0, WKT1:GDAL was implicitly calling --boundcrs-to-wgs84, to
+add a TOWGS84[] node in some cases. This is no longer the case.
+
+
+Version 7.0.0
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+proj
+--------
+
+Removed ``-ld`` option from application, since it promoted use of deprecated
+parameters like ``+towgs`` and ``+datum``.
+
+cs2cs
+--------
+
+Removed ``-ld`` option from application, since it promoted use of deprecated
+parameters like ``+towgs`` and ``+datum``.
+
+UTF-8 adoption
+--------------
+
+The value of all path, filenames passed to PROJ through function calls, PROJ
+strings or environment variables should be encoded in UTF-8.

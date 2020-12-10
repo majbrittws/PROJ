@@ -1,7 +1,3 @@
-platform:
-- x64
-- x86
-
 branches:
   except:
     - /(cherry-pick-)?backport-\d+-to-/
@@ -10,53 +6,58 @@ environment:
   matrix:
 
 # VS 2015
-  - VS_VERSION: Visual Studio 14
+  - platform: x86
     APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    BUILD_SHARED_LIBS: OFF
 
 # VS 2017
-  - VS_VERSION: Visual Studio 15
-    APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+#  - platform: x64
+#    APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+#    BUILD_SHARED_LIBS: ON
 
 shallow_clone: true
 
+cache:
+  - C:\Tools\vcpkg\installed\ -> appveyor.yml
+
 build_script:
-  - echo build_script
-  - git clone https://github.com/microsoft/vcpkg
-  - cd vcpkg
-  - bootstrap-vcpkg.bat
-  - set PATH=%CD%;%PATH%
-  - cd ..
-  - vcpkg install sqlite3:"%platform%"-windows
-  - set SQLITE3_BIN=%APPVEYOR_BUILD_FOLDER%\sqlite3\bin
-  - mkdir %SQLITE3_BIN%
-  - copy c:\projects\proj\vcpkg\installed\"%platform%"-windows\bin\sqlite3.dll %SQLITE3_BIN%
-  - ps: |
-        appveyor DownloadFile https://sqlite.org/2018/sqlite-tools-win32-x86-3250100.zip
-        7z x sqlite-tools-win32-x86-3250100.zip
-  - copy "%APPVEYOR_BUILD_FOLDER%"\sqlite-tools-win32-x86-3250100\sqlite3.exe %SQLITE3_BIN%
-  - set PATH=%PATH%;%SQLITE3_BIN%
-  - if "%platform%" == "x64" SET VS_FULL=%VS_VERSION% Win64
-  - if "%platform%" == "x64" SET BUILD_LIBPROJ_SHARED=ON
-  - if "%platform%" == "x86" SET VS_FULL=%VS_VERSION%
-  - if "%platform%" == "x86" SET BUILD_LIBPROJ_SHARED=OFF
-  - echo "%VS_FULL%"
+  - set VCPKG_INSTALLED=C:\Tools\vcpkg\installed\%platform%-windows
+  # If cached directory does not exist, update vcpkg and install dependencies
+  # The checkout of a precise sha1 for VS2015 is a workaround for https://github.com/microsoft/vcpkg/issues/11666
+  - if not exist %VCPKG_INSTALLED%\bin (
+      cd "C:\Tools\vcpkg" &
+      git pull > nul &
+      (if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2015" (git checkout a64dc07690bc8806e717e190f62eb58e198b599c)) &
+      .\bootstrap-vcpkg.bat -disableMetrics &
+      vcpkg install sqlite3[core,tool]:"%platform%"-windows &
+      vcpkg install tiff:"%platform%"-windows &
+      vcpkg install curl:"%platform%"-windows &
+      cd %APPVEYOR_BUILD_FOLDER%
+    )
+  - dir %VCPKG_INSTALLED%\bin
+  - set PATH=%VCPKG_INSTALLED%\bin;%PATH%
+  # See https://www.appveyor.com/docs/lang/cpp/
+  - if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2015" if %platform%==x86
+      (call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x86)
+  - if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2017"
+      (call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" %platform% )
 #
   - set PROJ_BUILD=%APPVEYOR_BUILD_FOLDER%\build
   - mkdir %PROJ_BUILD%
   - cd %PROJ_BUILD%
   - set PROJ_DIR=%APPVEYOR_BUILD_FOLDER%\proj_dir
-  - cmake -G "%VS_FULL%" .. -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBPROJ_SHARED="%BUILD_LIBPROJ_SHARED%" -DCMAKE_C_FLAGS="/WX" -DCMAKE_CXX_FLAGS="/WX" -DCMAKE_TOOLCHAIN_FILE=C:/projects/proj/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="%PROJ_DIR%"
-  - cmake --build . --config Release --target install
+  - cmake -GNinja .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS="%BUILD_SHARED_LIBS%" -DCMAKE_C_FLAGS="/WX" -DCMAKE_CXX_FLAGS="/WX" -DCMAKE_TOOLCHAIN_FILE=c:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="%PROJ_DIR%"
+  - ninja -v
+  - ninja install
+  - dir %PROJ_DIR%\bin
 
 test_script:
   - echo test_script
   - set PROJ_LIB=%PROJ_DIR%\share\proj
-  - cd %PROJ_LIB%
-  - curl -O https://download.osgeo.org/proj/proj-datumgrid-1.8.zip
-  - 7z e -aoa -y proj-datumgrid-1.8.zip
   - cd %PROJ_BUILD%
   - ctest -V -C Release
-  - set PATH=%PATH%;%PROJ_DIR%\bin
+  - set PATH=%PROJ_DIR%\bin;%PATH%
+  - call %APPVEYOR_BUILD_FOLDER%\test\postinstall\test_cmake.bat %PROJ_DIR%
   - proj
 
 deploy: off

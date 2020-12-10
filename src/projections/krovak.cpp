@@ -181,7 +181,7 @@ static PJ_LP krovak_e_inverse (PJ_XY xy, PJ *P) {                /* Ellipsoidal,
         fi1 = lp.phi;
     }
     if( i == 0 )
-        pj_ctx_set_errno( P->ctx, PJD_ERR_NON_CONVERGENT );
+        proj_context_errno_set( P->ctx, PJD_ERR_NON_CONVERGENT );
 
    lp.lam -= P->lam0;
 
@@ -191,14 +191,15 @@ static PJ_LP krovak_e_inverse (PJ_XY xy, PJ *P) {                /* Ellipsoidal,
 
 PJ *PROJECTION(krovak) {
     double u0, n0, g;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
 
     /* we want Bessel as fixed ellipsoid */
     P->a = 6377397.155;
-    P->e = sqrt(P->es = 0.006674372230614);
+    P->es = 0.006674372230614;
+    P->e = sqrt(P->es);
 
     /* if latitude of projection center is not set, use 49d30'N */
     if (!pj_param(P->ctx, P->params, "tlat_0").i)

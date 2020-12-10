@@ -1,5 +1,41 @@
 [
     {
+        "filename": "adams_hemi.png",
+        "latmax": 90,
+        "latmin": -90,
+        "lonmax": 90,
+        "lonmin": -90,
+        "name": "adams_hemi",
+        "projstring": "+proj=adams_hemi",
+        "res": "low",
+        "type": "poly"
+
+    },
+    {
+        "filename": "adams_ws1.png",
+        "latmax": 90,
+        "latmin": -90,
+        "lonmax": 180,
+        "lonmin": -180,
+        "name": "adams_ws1",
+        "projstring": "+proj=adams_ws1",
+        "res": "low",
+        "type": "poly"
+
+    },
+    {
+        "filename": "adams_ws2.png",
+        "latmax": 90,
+        "latmin": -90,
+        "lonmax": 180,
+        "lonmin": -180,
+        "name": "adams_ws2",
+        "projstring": "+proj=adams_ws2",
+        "res": "low",
+        "type": "poly"
+
+    },
+    {
         "filename": "aea.png",
         "latmax": 90,
         "latmin": -90,
@@ -475,6 +511,17 @@
         "type": "poly"
     },
     {
+        "filename": "guyou.png",
+        "latmax": 90,
+        "latmin": -90,
+        "lonmax": 90,
+        "lonmin": -90,
+        "name": "guyou",
+        "projstring": "+proj=guyou",
+        "res": "low",
+        "type": "poly"
+    },
+    {
         "filename": "hammer.png",
         "latmax": 90,
         "latmin": -90,
@@ -504,6 +551,17 @@
         "lonmin": -180,
         "name": "igh",
         "projstring": "+proj=igh",
+        "res": "low",
+        "type": "line"
+    },
+    {
+        "filename": "igh_o.png",
+        "latmax": 90,
+        "latmin": -90,
+        "lonmax": 180,
+        "lonmin": -180,
+        "name": "igh_o",
+        "projstring": "+proj=igh_o +lon_0=-160",
         "res": "low",
         "type": "line"
     },
@@ -989,6 +1047,17 @@
         "lonmin": -180,
         "name": "patterson",
         "projstring": "+proj=patterson",
+        "res": "low",
+        "type": "poly"
+    },
+    {
+        "filename": "peirce_q.png",
+        "latmax": 90,
+        "latmin": 0,
+        "lonmax": 180,
+        "lonmin": -180,
+        "name": "peirce_q",
+        "projstring": "+proj=peirce_q",
         "res": "low",
         "type": "poly"
     },

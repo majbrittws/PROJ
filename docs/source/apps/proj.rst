@@ -97,10 +97,6 @@ The following control parameters can appear in any order
 
     List of all distance units that can be selected with the *+units* parameter.
 
-.. option:: -ld
-
-    List of datums that can be selected with the *+datum* parameter.
-
 .. option:: -r
 
     This options reverses the order of the expected input from
@@ -178,7 +174,7 @@ For ASCII input data the two data values must be in the first two white space
 separated fields and when both input and output are ASCII all trailing
 portions of the input line are appended to the output line.
 
-Input geographic data (longitude and latitude) must be in DMS format and input
+Input geographic data (longitude and latitude) must be in DMS or decimal degrees format and input
 cartesian data must be in units consistent with the ellipsoid major axis or
 sphere radius units. Output geographic coordinates will be in DMS (if the
 ``-w`` switch is not employed) and precise to 0.001" with trailing, zero-valued
@@ -218,7 +214,7 @@ data will appear as three lines of::
     See also
     ********
 
-    **cs2cs(1)**, **cct(1)**, **geod(1)**, **gie(1)**, **projinfo(1)**
+    **cs2cs(1)**, **cct(1)**, **geod(1)**, **gie(1)**, **projinfo(1)**, **projsync(1)**
 
     Bugs
     ****

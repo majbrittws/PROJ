@@ -45,13 +45,13 @@ Unlike the Mercator, the Gall shows the poles as lines running across the top an
 
 Example using Gall Stereographical  ::
 
-    $ echo 9 51 | proj +proj=gall +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs
-    708432.90	5193386.36
+    $ echo 9 51 | proj +proj=gall +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +units=m
+    708432.90   5193386.36
 
 Example using Gall Stereographical (Central meridian 90°W) ::
 
-    $ echo 9 51 | proj +proj=gall +lon_0=90w +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs
-    7792761.91	5193386.36
+    $ echo 9 51 | proj +proj=gall +lon_0=90w +x_0=0 +y_0=0 +ellps=WGS84 +units=m
+    7792761.91  5193386.36
 
 Parameters
 ################################################################################

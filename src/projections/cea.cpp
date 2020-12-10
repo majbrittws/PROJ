@@ -43,9 +43,10 @@ static PJ_LP cea_e_inverse (PJ_XY xy, PJ *P) {          /* Ellipsoidal, inverse 
 
 static PJ_LP cea_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, inverse */
     PJ_LP lp = {0.0,0.0};
-    double t;
 
-    if ((t = fabs(xy.y *= P->k0)) - EPS <= 1.) {
+    xy.y *= P->k0;
+    const double t = fabs(xy.y);
+    if (t - EPS <= 1.) {
         if (t >= 1.)
             lp.phi = xy.y < 0. ? -M_HALFPI : M_HALFPI;
         else
@@ -65,14 +66,14 @@ static PJ *destructor (PJ *P, int errlev) {                        /* Destructor
     if (nullptr==P->opaque)
         return pj_default_destructor (P, errlev);
 
-    pj_dealloc (static_cast<struct pj_opaque*>(P->opaque)->apa);
+    free (static_cast<struct pj_opaque*>(P->opaque)->apa);
     return pj_default_destructor (P, errlev);
 }
 
 
 PJ *PROJECTION(cea) {
     double t = 0.0;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
@@ -88,7 +89,8 @@ PJ *PROJECTION(cea) {
         t = sin(t);
         P->k0 /= sqrt(1. - P->es * t * t);
         P->e = sqrt(P->es);
-        if (!(Q->apa = pj_authset(P->es)))
+        Q->apa = pj_authset(P->es);
+        if (!(Q->apa))
             return pj_default_destructor(P, ENOMEM);
 
         Q->qp = pj_qsfn(1., P->e, P->one_es);

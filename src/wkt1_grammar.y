@@ -53,7 +53,11 @@
 %token T_GEOCCS                 "GEOCCS"
 %token T_AUTHORITY              "AUTHORITY"
 %token T_VERT_CS                "VERT_CS"
+// ESRI variation
+%token T_VERTCS                 "VERTCS"
 %token T_VERT_DATUM             "VERT_DATUM"
+// ESRI variation
+%token T_VDATUM                 "VDATUM"
 %token T_COMPD_CS               "COMPD_CS"
 %token T_AXIS                   "AXIS"
 %token T_TOWGS84                "TOWGS84"
@@ -124,7 +128,11 @@ integer:
 /* 7.2 Coordinate System WKT */
 
 coordinate_system:
-    horz_cs | geocentric_cs | vert_cs | compd_cs | fitted_cs | local_cs
+    horz_cs_with_opt_esri_vertcs | geocentric_cs | vert_cs | compd_cs | fitted_cs | local_cs
+
+horz_cs_with_opt_esri_vertcs:
+    horz_cs
+  | horz_cs ',' esri_vert_cs
 
 horz_cs:
     geographic_cs | projected_cs
@@ -213,6 +221,10 @@ authority:
 
 vert_cs:
     T_VERT_CS begin_node_name ',' vert_datum ',' linear_unit opt_axis_authority end_node
+    | esri_vert_cs
+
+esri_vert_cs:
+    T_VERTCS begin_node_name ',' vdatum_or_datum ',' opt_parameter_list_linear_unit end_node
 
 opt_axis_authority:
     | ',' axis opt_authority
@@ -220,6 +232,11 @@ opt_axis_authority:
 
 vert_datum:
     T_VERT_DATUM begin_node_name ',' datum_type opt_extension_authority end_node
+
+vdatum_or_datum: vdatum | datum
+
+vdatum:
+    T_VDATUM begin_node_name end_node
 
 opt_extension_authority:
     | ',' extension opt_authority
@@ -232,10 +249,12 @@ compd_cs:
     T_COMPD_CS begin_node_name ',' head_cs ',' tail_cs opt_extension_authority end_node
 
 head_cs:
-    coordinate_system
+    horz_cs
 
+// Accepting a geographic CRS as part of the second CRS of a COMPD_CS is horrible
+// but found in LAS WKT
 tail_cs:
-    coordinate_system
+    geographic_cs | vert_cs
 
 twin_axis: axis ',' axis
 

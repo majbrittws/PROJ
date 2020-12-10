@@ -120,7 +120,7 @@ For ATPOL to WGS84 test, run the following script:
 ::
 
    #!/bin/bash
-   cat << EOF | src/cs2cs -v -f "%E" +proj=ccon +lat_1=52 +lat_0=52 +lon_0=19 +axis=esu +a=6390000 +x_0=330000 +y_0=-350000 +to +proj=longlat +datum=WGS84 +no_defs
+   cat << EOF | src/cs2cs -v -f "%E" +proj=ccon +lat_1=52 +lat_0=52 +lon_0=19 +axis=esu +a=6390000 +x_0=330000 +y_0=-350000 +to +proj=longlat
    0 0
    0 700000
    700000 0
@@ -132,17 +132,17 @@ It should result with
 
 ::
 
-   1.384023E+01	5.503040E+01 0.000000E+00
-   1.451445E+01	4.877385E+01 0.000000E+00
-   2.478271E+01	5.500352E+01 0.000000E+00
-   2.402761E+01	4.875048E+01 0.000000E+00
-   1.900000E+01	5.200000E+01 0.000000E+00
+   1.384023E+01 5.503040E+01 0.000000E+00
+   1.451445E+01 4.877385E+01 0.000000E+00
+   2.478271E+01 5.500352E+01 0.000000E+00
+   2.402761E+01 4.875048E+01 0.000000E+00
+   1.900000E+01 5.200000E+01 0.000000E+00
 
 Analogous script can be run for reverse test:
 
 ::
 
-   cat << EOF  | src/cs2cs -v -f "%E" +proj=longlat +datum=WGS84 +no_defs +to +proj=ccon +lat_1=52 +lat_0=52 +lon_0=19 +axis=esu +a=6390000 +x_0=330000 +y_0=-350000
+   cat << EOF  | src/cs2cs -v -f "%E" +proj=longlat +to +proj=ccon +lat_1=52 +lat_0=52 +lon_0=19 +axis=esu +a=6390000 +x_0=330000 +y_0=-350000
    24 55
    15 49
    24 49
@@ -153,7 +153,7 @@ and it should give the following results:
 
 ::
 
-   6.500315E+05	4.106162E+03 0.000000E+00
-   3.707419E+04	6.768262E+05 0.000000E+00
-   6.960534E+05	6.722946E+05 0.000000E+00
-   3.300000E+05	3.500000E+05 0.000000E+00
+   6.500315E+05 4.106162E+03 0.000000E+00
+   3.707419E+04 6.768262E+05 0.000000E+00
+   6.960534E+05 6.722946E+05 0.000000E+00
+   3.300000E+05 3.500000E+05 0.000000E+00

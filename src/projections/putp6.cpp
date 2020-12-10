@@ -23,15 +23,15 @@ PROJ_HEAD(putp6p, "Putnins P6'") "\n\tPCyl, Sph";
 static PJ_XY putp6_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward */
     PJ_XY xy = {0.0,0.0};
     struct pj_opaque *Q = static_cast<struct pj_opaque*>(P->opaque);
-    double p, r, V;
     int i;
 
-    p = Q->B * sin(lp.phi);
+    const double p = Q->B * sin(lp.phi);
     lp.phi *=  1.10265779;
     for (i = NITER; i ; --i) {
-        r = sqrt(1. + lp.phi * lp.phi);
-        lp.phi -= V = ( (Q->A - r) * lp.phi - log(lp.phi + r) - p ) /
-            (Q->A - 2. * r);
+        const double r = sqrt(1. + lp.phi * lp.phi);
+        const double V = ( (Q->A - r) * lp.phi - log(lp.phi + r) - p ) /
+                            (Q->A - 2. * r);
+        lp.phi -= V;
         if (fabs(V) < EPS)
             break;
     }
@@ -59,7 +59,7 @@ static PJ_LP putp6_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, invers
 
 
 PJ *PROJECTION(putp6) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor(P, ENOMEM);
     P->opaque = Q;
@@ -79,7 +79,7 @@ PJ *PROJECTION(putp6) {
 
 
 PJ *PROJECTION(putp6p) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor(P, ENOMEM);
     P->opaque = Q;

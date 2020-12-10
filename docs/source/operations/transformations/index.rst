@@ -11,6 +11,7 @@ systems are based on different datums.
    :maxdepth: 1
 
    affine
+   defmodel
    deformation
    geogoffset
    helmert
@@ -18,4 +19,6 @@ systems are based on different datums.
    molodensky
    molobadekas
    hgridshift
+   tinshift
    vgridshift
+   xyzgridshift

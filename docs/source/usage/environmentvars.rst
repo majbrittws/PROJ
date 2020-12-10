@@ -48,7 +48,7 @@ done by setting the variable with no content::
 
     Starting with PROJ version 6.1.0, the paths set by
     :func:`proj_context_set_search_paths` will have priority over the
-    :envvar:`PROJ_LIB` to allow for mutliple versions of PROJ
+    :envvar:`PROJ_LIB` to allow for multiple versions of PROJ
     resource files on your system without conflicting.
 
 .. envvar:: PROJ_DEBUG
@@ -56,3 +56,29 @@ done by setting the variable with no content::
     Set the debug level of PROJ. The default debug level is zero, which results
     in no debug output when using PROJ. A number from 1-3, whit 3 being the most
     verbose setting.
+
+.. envvar:: PROJ_NETWORK
+
+    .. versionadded:: 7.0.0
+
+    If set to ON, enable the capability to use remote grids stored on CDN
+    (Content Delivery Network) storage, when grids are not available locally.
+    Alternatively, the :c:func:`proj_context_set_enable_network` function can
+    be used.
+
+.. envvar:: PROJ_NETWORK_ENDPOINT
+
+    .. versionadded:: 7.0.0
+
+    Define the endpoint of the CDN storage. Normally defined through the proj.ini
+    configuration file locale in :envvar:`PROJ_LIB`.
+    Alternatively, the :c:func:`proj_context_set_url_endpoint` function can
+    be used.
+
+.. envvar:: PROJ_CURL_CA_BUNDLE
+
+    .. versionadded:: 7.2.0
+
+    Define a custum path to the CA Bundle file. This can be useful if `curl`
+    and :envvar:`PROJ_NETWORK` are enabled. Alternatively, the 
+    :c:func:`proj_curl_set_ca_bundle_path` function can be used.

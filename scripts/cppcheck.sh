@@ -22,7 +22,7 @@ for dirname in ${TOPDIR}/src; do
     echo "Running cppcheck on $dirname... (can be long)"
     if ! cppcheck --inline-suppr --template='{file}:{line},{severity},{id},{message}' \
         --enable=all --inconclusive --std=posix \
-        -DCPPCHECK -D__cplusplus=201103L -DACCEPT_USE_OF_DEPRECATED_PROJ_API_H -DNAN \
+        -DCPPCHECK -D__cplusplus=201103L -DNAN \
         -I${TOPDIR}/src -I${TOPDIR}/include \
         "$dirname" \
         -j 8 >>${LOG_FILE} 2>&1 ; then
@@ -43,6 +43,10 @@ grep -v "unmatchedSuppression" ${LOG_FILE} \
     | grep -v "passedByValue,Function parameter 'xyz' should be passed by const reference" \
     | grep -v "passedByValue,Function parameter 'in' should be passed by const reference" \
     | grep -v "knownConditionTrueFalse,Condition '!allowEmptyIntersection' is always false" \
+    | grep -v -e "unitconvert.*unreadVariable,Variable 'point.*' is assigned a value that is never used" \
+    | grep -v -e "helmert.*unreadVariable,Variable 'point.*' is assigned a value that is never used" \
+    | grep -v -e "molodensky.*unreadVariable,Variable 'point.*' is assigned a value that is never used" \
+    | grep -v -e "vgridshift.*unreadVariable,Variable 'point.*' is assigned a value that is never used" \
     > ${LOG_FILE}.tmp
 mv ${LOG_FILE}.tmp ${LOG_FILE}
 

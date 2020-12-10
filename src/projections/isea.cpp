@@ -322,7 +322,7 @@ static int isea_snyder_forward(struct isea_geo * ll, struct isea_pt * out)
 
     /*
      * spherical distance from center of polygon face to any of its
-     * vertexes on the globe
+     * vertices on the globe
      */
     double          g;
 
@@ -339,7 +339,7 @@ static int isea_snyder_forward(struct isea_geo * ll, struct isea_pt * out)
     double          theta;
 
     /* additional variables from snyder */
-    double          q, Rprime, H, Ag, Azprime, Az, dprime, f, rho,
+    double          q, H, Ag, Azprime, Az, dprime, f, rho,
                     x, y;
 
     /* variables used to store intermediate results */
@@ -427,7 +427,7 @@ static int isea_snyder_forward(struct isea_geo * ll, struct isea_pt * out)
         /* eq 5 */
         /* Rprime = 0.9449322893 * R; */
         /* R' in the paper is for the truncated */
-        Rprime = 0.91038328153090290025;
+        const double Rprime = 0.91038328153090290025;
 
         /* eq 6 */
         H = acos(sin(Az) * sin(G) * cos(g) - cos(Az) * cos(G));
@@ -733,7 +733,7 @@ static int isea_dddi_ap3odd(struct isea_dgg *g, int quadz, struct isea_pt *pt,
             quadz += 5;
             d = 0;
         }
-    } else if (quadz >= 6) {
+    } else /* if (quadz >= 6) */ {
         if (i == 0 && d == maxcoord) {
             /* south pole */
             quadz = 11;
@@ -812,7 +812,7 @@ static int isea_dddi(struct isea_dgg *g, int quadz, struct isea_pt *pt,
             h.y = -h.z;
             h.x = 0;
         }
-    } else if (quadz >= 6) {
+    } else /* if (quadz >= 6) */ {
         if (h.z == 0 && h.x == sidelength) {
             /* south pole */
             quadz = 11;
@@ -1039,7 +1039,7 @@ static PJ_XY isea_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward
 
 PJ *PROJECTION(isea) {
     char *opt;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;

@@ -334,7 +334,6 @@ TEST(gie, info_functions) {
 
     const PJ_OPERATIONS *oper_list;
     const PJ_ELLPS *ellps_list;
-    const PJ_UNITS *unit_list;
     const PJ_PRIME_MERIDIANS *pm_list;
 
     char buf[40];
@@ -348,7 +347,9 @@ TEST(gie, info_functions) {
 
     /* proj_info()                                                            */
     /* this one is difficult to test, since the output changes with the setup */
+    putenv(const_cast<char *>("PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY="));
     info = proj_info();
+    putenv(const_cast<char *>("PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES"));
 
     if (info.version[0] != '\0') {
         char tmpstr[64];
@@ -359,6 +360,9 @@ TEST(gie, info_functions) {
     if (getenv("HOME") || getenv("PROJ_LIB")) {
         ASSERT_NE(std::string(info.searchpath), std::string());
     }
+
+    ASSERT_TRUE(std::string(info.searchpath).find("/proj") !=
+                std::string::npos);
 
     /* proj_pj_info() */
     {
@@ -379,11 +383,16 @@ TEST(gie, info_functions) {
     proj_destroy(P);
 
     /* proj_grid_info() */
-    grid_info = proj_grid_info("null");
+    grid_info = proj_grid_info("tests/test_hgrid.tif");
     ASSERT_NE(std::string(grid_info.filename), "");
-    ASSERT_EQ(std::string(grid_info.gridname), "null");
+    ASSERT_EQ(std::string(grid_info.gridname), "tests/test_hgrid.tif");
+    ASSERT_EQ(std::string(grid_info.format), "gtiff");
 
     grid_info = proj_grid_info("nonexistinggrid");
+    ASSERT_EQ(std::string(grid_info.filename), "");
+
+    // File exists, but is not a grid
+    grid_info = proj_grid_info("proj.db");
     ASSERT_EQ(std::string(grid_info.filename), "");
 
     /* proj_init_info() */
@@ -439,11 +448,6 @@ TEST(gie, info_functions) {
 
     n = 0;
     for (ellps_list = proj_list_ellps(); ellps_list->id; ++ellps_list)
-        n++;
-    ASSERT_NE(n, 0U);
-
-    n = 0;
-    for (unit_list = proj_list_units(); unit_list->id; ++unit_list)
         n++;
     ASSERT_NE(n, 0U);
 
@@ -544,7 +548,7 @@ static void test_time(const char *args, double tol, double t_in, double t_exp) {
     out = proj_trans(P, PJ_INV, out);
     EXPECT_NEAR(out.xyzt.t, t_in, tol);
 
-    pj_free(P);
+    proj_destroy(P);
 
     proj_log_level(NULL, PJ_LOG_NONE);
 }

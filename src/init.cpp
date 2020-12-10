@@ -1,7 +1,7 @@
 /******************************************************************************
  * Project:  PROJ.4
  * Purpose:  Initialize projection object from string definition.  Includes
- *           pj_init(), pj_init_plus() and pj_free() function.
+ *           pj_init(), and pj_init_plus() function.
  * Author:   Gerald Evenden, Frank Warmerdam <warmerdam@pobox.com>
  *
  ******************************************************************************
@@ -39,6 +39,7 @@
 #include "geodesic.h"
 #include "proj.h"
 #include "proj_internal.h"
+#include "filemanager.hpp"
 #include <math.h>
 
 
@@ -48,25 +49,23 @@ static paralist *string_to_paralist (PJ_CONTEXT *ctx, char *definition) {
     Convert a string (presumably originating from get_init_string) to a paralist.
 ***************************************************************************************/
     const char *c = definition;
-    paralist *first = nullptr, *next = nullptr;
+    paralist *first = nullptr, *last = nullptr;
 
     while (*c) {
         /* Keep a handle to the start of the list, so we have something to return */
-        if (nullptr==first)
-            first = next = pj_mkparam_ws (c, &c);
-        else
-            next = next->next = pj_mkparam_ws (c, &c);
-        if (nullptr==next) {
-            pj_dealloc_params (ctx, first, ENOMEM);
+        auto param = pj_mkparam_ws (c, &c);
+        if (nullptr==param) {
+            free_params (ctx, first, ENOMEM);
             return nullptr;
         }
+        if (nullptr==last) {
+            first = param;
+        }
+        else {
+            last->next = param;
+        }
+        last = param;
     }
-
-    if( next == nullptr )
-        return nullptr;
-
-    /* Terminate list and return */
-    next->next = nullptr;
     return first;
 }
 
@@ -83,18 +82,10 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
     char *fname, *section;
     const char *key;
     char *buffer = nullptr;
-    char *line = nullptr;
-    PAFile fid;
     size_t n;
 
-
-    line = static_cast<char*>(pj_malloc (MAX_LINE_LENGTH + 1));
-    if (nullptr==line)
-        return nullptr;
-
-    fname = static_cast<char*>(pj_malloc (MAX_PATH_FILENAME+ID_TAG_MAX+3));
+    fname = static_cast<char*>(malloc (MAX_PATH_FILENAME+ID_TAG_MAX+3));
     if (nullptr==fname) {
-        pj_dealloc (line);
         return nullptr;
     }
 
@@ -105,8 +96,7 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
     else
         key += 5;
     if (MAX_PATH_FILENAME + ID_TAG_MAX + 2 < strlen (key)) {
-        pj_dealloc (fname);
-        pj_dealloc (line);
+        free (fname);
         return nullptr;
     }
     memmove (fname, key, strlen (key) + 1);
@@ -115,8 +105,7 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
     section = strrchr(fname, ':');
     if (nullptr==section) {
         proj_context_errno_set (ctx, PJD_ERR_NO_COLON_IN_INIT_STRING);
-        pj_dealloc (fname);
-        pj_dealloc (line);
+        free (fname);
         return nullptr;
     }
     *section = 0;
@@ -126,50 +115,48 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
             "get_init_string: searching for section [%s] in init file [%s]",
             section, fname);
 
-    fid = pj_open_lib (ctx, fname, "rt");
-    if (nullptr==fid) {
-        pj_dealloc (fname);
-        pj_dealloc (line);
+    auto file = NS_PROJ::FileManager::open_resource_file(ctx, fname);
+    if (nullptr==file) {
+        free (fname);
         proj_context_errno_set (ctx, PJD_ERR_NO_OPTION_IN_INIT_FILE);
         return nullptr;
     }
 
     /* Search for section in init file */
+    std::string line;
     for (;;) {
 
+        bool eofReached = false;
+        bool maxLenReached = false;
+        line = file->read_line(MAX_LINE_LENGTH, maxLenReached, eofReached);
         /* End of file? */
-        if (nullptr==pj_ctx_fgets (ctx, line, MAX_LINE_LENGTH, fid)) {
-            pj_dealloc (buffer);
-            pj_dealloc (fname);
-            pj_dealloc (line);
-            pj_ctx_fclose (ctx, fid);
+        if (maxLenReached || eofReached) {
+            free (fname);
             proj_context_errno_set (ctx, PJD_ERR_NO_OPTION_IN_INIT_FILE);
             return nullptr;
         }
 
         /* At start of right section? */
-        pj_chomp (line);
+        pj_chomp (&line[0]);
         if ('<'!=line[0])
             continue;
-        if (strlen (line) < n + 2)
+        if (strlen (line.c_str()) < n + 2)
             continue;
         if (line[n + 1] != '>')
             continue;
-        if (0==strncmp (line + 1, section, n))
+        if (0==strncmp (line.data() + 1, section, n))
             break;
     }
 
     /* We're at the first line of the right section - copy line to buffer */
-    buffer = static_cast<char*>(pj_malloc (current_buffer_size));
+    buffer = static_cast<char*>(malloc (current_buffer_size));
     if (nullptr==buffer) {
-        pj_dealloc (fname);
-        pj_dealloc (line);
-        pj_ctx_fclose (ctx, fid);
+        free (fname);
         return nullptr;
     }
 
     /* Skip the "<section>" indicator, and copy the rest of the line over */
-    strcpy (buffer, line + strlen (section) + 2);
+    strcpy (buffer, line.data() + strlen (section) + 2);
 
     /* Copy the remaining lines of the section to buffer */
     for (;;) {
@@ -183,34 +170,35 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
             break;
         }
 
+        bool eofReached = false;
+        bool maxLenReached = false;
+        line = file->read_line(MAX_LINE_LENGTH, maxLenReached, eofReached);
         /* End of file? - done! */
-        if (nullptr==pj_ctx_fgets (ctx, line, MAX_LINE_LENGTH, fid))
+        if (maxLenReached || eofReached)
             break;
 
         /* Otherwise, handle the line. It MAY be the start of the next section, */
         /* but that will be handled at the start of next trip through the loop  */
         buffer_length = strlen (buffer);
-        pj_chomp (line);   /* Remove '#' style comments */
-        next_length = strlen (line) + buffer_length + 2;
+        pj_chomp (&line[0]);   /* Remove '#' style comments */
+        next_length = strlen (line.data()) + buffer_length + 2;
         if (next_length > current_buffer_size) {
-            char *b = static_cast<char*>(pj_malloc (2 * current_buffer_size));
+            char *b = static_cast<char*>(malloc (2 * current_buffer_size));
             if (nullptr==b) {
-                pj_dealloc (buffer);
+                free (buffer);
                 buffer = nullptr;
                 break;
             }
             strcpy (b, buffer);
             current_buffer_size *= 2;
-            pj_dealloc (buffer);
+            free (buffer);
             buffer = b;
         }
         buffer[buffer_length] = ' ';
-        strcpy (buffer + buffer_length + 1, line);
+        strcpy (buffer + buffer_length + 1, line.data());
     }
 
-    pj_ctx_fclose (ctx, fid);
-    pj_dealloc (fname);
-    pj_dealloc (line);
+    free (fname);
     if (nullptr==buffer)
         return nullptr;
     pj_shrink (buffer);
@@ -251,7 +239,7 @@ Expand key from buffer or (if not in buffer) from init file
         char initname[5];
         int exists;
 
-        memcpy(initname, xkey, 4);
+        strncpy(initname, xkey, 4);
         initname[4] = 0;
 
         if( strncmp(xkey, "epsg:", 5) == 0 ) {
@@ -269,7 +257,7 @@ Expand key from buffer or (if not in buffer) from init file
             PJ* src;
             const char* proj_string;
 
-            pj_ctx_set_errno( ctx, 0 );
+            proj_context_errno_set( ctx, 0 );
 
             if( !allow_init_epsg ) {
                 pj_log (ctx, PJ_LOG_TRACE, "%s expansion disallowed", xkey);
@@ -318,7 +306,7 @@ Expand key from buffer or (if not in buffer) from init file
                 definition,
                 init_items->param,
                 init_items->next ? init_items->next->param : "(empty)");
-    pj_dealloc (definition);
+    free (definition);
     if (nullptr==init_items)
         return nullptr;
 
@@ -412,90 +400,6 @@ paralist *pj_expand_init(PJ_CONTEXT *ctx, paralist *init) {
 
 
 /************************************************************************/
-/*                            pj_init_plus()                            */
-/*                                                                      */
-/*      Same as pj_init() except it takes one argument string with      */
-/*      individual arguments preceded by '+', such as "+proj=utm        */
-/*      +zone=11 +ellps=WGS84".                                         */
-/************************************************************************/
-
-PJ *
-pj_init_plus( const char *definition )
-
-{
-    return pj_init_plus_ctx( pj_get_default_ctx(), definition );
-}
-
-PJ *
-pj_init_plus_ctx( projCtx ctx, const char *definition )
-{
-#define MAX_ARG 200
-    char	*argv[MAX_ARG];
-    char	*defn_copy;
-    int		argc = 0, i, blank_count = 0;
-    PJ	    *result = nullptr;
-
-    /* make a copy that we can manipulate */
-    defn_copy = (char *) pj_malloc( strlen(definition)+1 );
-    if (!defn_copy)
-        return nullptr;
-    strcpy( defn_copy, definition );
-
-    /* split into arguments based on '+' and trim white space */
-
-    for( i = 0; defn_copy[i] != '\0'; i++ )
-    {
-        switch( defn_copy[i] )
-        {
-          case '+':
-            if( i == 0 || defn_copy[i-1] == '\0' || blank_count > 0 )
-            {
-                /* trim trailing spaces from the previous param */
-                if( blank_count > 0 )
-                {
-                    defn_copy[i - blank_count] = '\0';
-                    blank_count = 0;
-                }
-
-                if( argc+1 == MAX_ARG )
-                {
-                    pj_dalloc( defn_copy );
-                    pj_ctx_set_errno( ctx, PJD_ERR_UNPARSEABLE_CS_DEF );
-                    return nullptr;
-                }
-
-                argv[argc++] = defn_copy + i + 1;
-            }
-            break;
-
-          case ' ':
-          case '\t':
-          case '\n':
-            /* trim leading spaces from the current param */
-            if( i == 0 || defn_copy[i-1] == '\0' || argc == 0 || argv[argc-1] == defn_copy + i )
-                defn_copy[i] = '\0';
-            else
-                blank_count++;
-            break;
-
-          default:
-            /* reset blank_count */
-            blank_count = 0;
-        }
-    }
-    /* trim trailing spaces from the last param */
-    defn_copy[i - blank_count] = '\0';
-
-    /* perform actual initialization */
-    result = pj_init_ctx( ctx, argc, argv );
-
-    pj_dalloc( defn_copy );
-    return result;
-}
-
-
-
-/************************************************************************/
 /*                              pj_init()                               */
 /*                                                                      */
 /*      Main entry point for initialing a PJ projections                */
@@ -503,11 +407,6 @@ pj_init_plus_ctx( projCtx ctx, const char *definition )
 /*      called to do the initial allocation so it can be created        */
 /*      large enough to hold projection specific parameters.            */
 /************************************************************************/
-
-PJ *
-pj_init(int argc, char **argv) {
-    return pj_init_ctx( pj_get_default_ctx(), argc, argv );
-}
 
 
 static PJ_CONSTRUCTOR locate_constructor (const char *name) {
@@ -523,15 +422,7 @@ static PJ_CONSTRUCTOR locate_constructor (const char *name) {
 
 
 PJ *
-pj_init_ctx(projCtx ctx, int argc, char **argv) {
-    /* Legacy interface: allow init=epsg:XXXX syntax by default */
-    int allow_init_epsg = proj_context_get_use_proj4_init_rules(ctx, TRUE);
-    return pj_init_ctx_with_allow_init_epsg(ctx, argc, argv, allow_init_epsg);
-}
-
-
-PJ *
-pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_init_epsg) {
+pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int allow_init_epsg) {
     const char *s;
     char *name;
     PJ_CONSTRUCTOR proj;
@@ -550,7 +441,7 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
     ctx->last_errno = 0;
 
     if (argc <= 0) {
-        pj_ctx_set_errno (ctx, PJD_ERR_NO_ARGS);
+        proj_context_errno_set (ctx, PJD_ERR_NO_ARGS);
         return nullptr;
     }
 
@@ -564,13 +455,13 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
 
     /* can't have nested pipelines directly */
     if (n_pipelines > 1) {
-        pj_ctx_set_errno (ctx, PJD_ERR_MALFORMED_PIPELINE);
+        proj_context_errno_set (ctx, PJD_ERR_MALFORMED_PIPELINE);
         return nullptr;
     }
 
     /* don't allow more than one +init in non-pipeline operations */
     if (n_pipelines == 0 && n_inits > 1) {
-        pj_ctx_set_errno (ctx, PJD_ERR_TOO_MANY_INITS);
+        proj_context_errno_set (ctx, PJD_ERR_TOO_MANY_INITS);
         return nullptr;
     }
 
@@ -578,14 +469,14 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
     /* put arguments into internal linked list */
     start = curr = pj_mkparam(argv[0]);
     if (!curr) {
-        pj_dealloc_params (ctx, start, ENOMEM);
+        free_params (ctx, start, ENOMEM);
         return nullptr;
     }
 
     for (i = 1; i < argc; ++i) {
         curr->next = pj_mkparam(argv[i]);
         if (!curr->next) {
-            pj_dealloc_params (ctx, start, ENOMEM);
+            free_params (ctx, start, ENOMEM);
             return nullptr;
         }
         curr = curr->next;
@@ -600,31 +491,31 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
     if (init && n_pipelines == 0) {
         init = pj_expand_init_internal (ctx, init, allow_init_epsg);
         if (!init) {
-            pj_dealloc_params (ctx, start, PJD_ERR_NO_ARGS);
+            free_params (ctx, start, PJD_ERR_NO_ARGS);
             return nullptr;
         }
     }
     if (ctx->last_errno) {
-        pj_dealloc_params (ctx, start, ctx->last_errno);
+        free_params (ctx, start, ctx->last_errno);
         return nullptr;
     }
 
     /* Find projection selection */
     curr = pj_param_exists (start, "proj");
     if (nullptr==curr) {
-        pj_dealloc_params (ctx, start, PJD_ERR_PROJ_NOT_NAMED);
+        free_params (ctx, start, PJD_ERR_PROJ_NOT_NAMED);
         return nullptr;
     }
     name =  curr->param;
     if (strlen (name) < 6) {
-        pj_dealloc_params (ctx, start, PJD_ERR_PROJ_NOT_NAMED);
+        free_params (ctx, start, PJD_ERR_PROJ_NOT_NAMED);
         return nullptr;
     }
     name += 5;
 
     proj = locate_constructor (name);
     if (nullptr==proj) {
-        pj_dealloc_params (ctx, start, PJD_ERR_UNKNOWN_PROJECTION_ID);
+        free_params (ctx, start, PJD_ERR_UNKNOWN_PROJECTION_ID);
         return nullptr;
     }
 
@@ -633,7 +524,7 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
     /* Allocate projection structure */
     PIN = proj(nullptr);
     if (nullptr==PIN) {
-        pj_dealloc_params (ctx, start, ENOMEM);
+        free_params (ctx, start, ENOMEM);
         return nullptr;
     }
 
@@ -645,12 +536,6 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
     PIN->is_long_wrap_set = 0;
     PIN->long_wrap_center = 0.0;
     strcpy( PIN->axis, "enu" );
-
-    PIN->gridlist = nullptr;
-    PIN->gridlist_count = 0;
-
-    PIN->vgridlist_geoid = nullptr;
-    PIN->vgridlist_geoid_count = 0;
 
     /* Set datum parameters. Similarly to +init parameters we want to expand    */
     /* +datum parameters as late as possible when dealing with pipelines.       */
@@ -756,7 +641,7 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
         return pj_default_destructor (PIN, PJD_ERR_K_LESS_THAN_ZERO);
 
     /* Set units */
-    units = proj_list_units();
+    units = pj_list_linear_units();
     s = nullptr;
     if ((name = pj_param(ctx, start, "sunits").s) != nullptr) {
         for (i = 0; (s = units[i].id) && strcmp(name, s) ; ++i) ;
@@ -838,7 +723,7 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
         PIN->from_greenwich = 0.0;
 
     /* Private object for the geodesic functions */
-    PIN->geod = static_cast<struct geod_geodesic*>(pj_calloc (1, sizeof (struct geod_geodesic)));
+    PIN->geod = static_cast<struct geod_geodesic*>(calloc (1, sizeof (struct geod_geodesic)));
     if (nullptr==PIN->geod)
         return pj_default_destructor (PIN, ENOMEM);
     geod_init(PIN->geod, PIN->a,  (1 - sqrt (1 - PIN->es)));
@@ -847,7 +732,7 @@ pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_i
     err = proj_errno_reset (PIN);
     PIN = proj(PIN);
     if (proj_errno (PIN)) {
-        pj_free(PIN);
+        proj_destroy(PIN);
         return nullptr;
     }
     proj_errno_restore (PIN, err);

@@ -18,4 +18,6 @@ conversions.
    noop
    pop
    push
+   set
+   topocentric
    unitconvert

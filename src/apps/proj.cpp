@@ -9,6 +9,8 @@
 #include "emess.h"
 #include "utils.h"
 
+#include <vector>
+
 #if defined(MSDOS) || defined(OS2) || defined(WIN32) || defined(__WIN32__)
 #  include <fcntl.h>
 #  include <io.h>
@@ -171,6 +173,7 @@ static void process(FILE *fid) {
                 (void)fputs("\t<* * * * * *>", stdout);
         }
         (void)fputs(bin_in ? "\n" : s, stdout);
+        fflush(stdout);
     }
 }
 
@@ -249,10 +252,8 @@ static void vprocess(FILE *fid) {
             if (postscale) { dat_xy.x *= fscale; dat_xy.y *= fscale; }
         }
 
-        /* For some reason pj_errno does not work as expected in some   */
-        /* versions of Visual Studio, so using pj_get_errno_ref instead */
-        if (*pj_get_errno_ref()) {
-            emess(-1, pj_strerrno(*pj_get_errno_ref()));
+        if (proj_context_errno(nullptr)) {
+            emess(-1, proj_errno_string(proj_context_errno(nullptr)));
             continue;
         }
 
@@ -286,15 +287,17 @@ static void vprocess(FILE *fid) {
         (void)fputs(proj_rtodms(pline, facs.meridian_convergence, 0, 0), stdout);
         (void)printf(" [ %.8f ]\n", facs.meridian_convergence * RAD_TO_DEG);
         (void)printf("Max-min (Tissot axis a-b) scale error: %.5f %.5f\n\n", facs.tissot_semimajor, facs.tissot_semiminor);
+
+        fflush(stdout);
     }
 }
 
 int main(int argc, char **argv) {
     char *arg;
-    char *pargv[MAX_PARGS] = {};
+    std::vector<char*> argvVector;
     char **eargv = argv;
     FILE *fid;
-    int pargc = 0, eargc = 0, mon = 0;
+    int eargc = 0, mon = 0;
 
     if ( (emess_dat.Prog_name = strrchr(*argv,DIR_CHAR)) != nullptr)
         ++emess_dat.Prog_name;
@@ -380,22 +383,18 @@ int main(int argc, char **argv) {
                         (void)printf("%9s %-16s %-16s %s\n",
                                      le->id, le->major, le->ell, le->name);
                 } else if (arg[1] == 'u') { /* list units */
-                    const struct PJ_UNITS *lu;
-
-                    for (lu = proj_list_units(); lu->id ; ++lu)
-                        (void)printf("%12s %-20s %s\n",
-                                     lu->id, lu->to_meter, lu->name);
-                } else if (arg[1] == 'd') { /* list datums */
-                    const struct PJ_DATUMS *ld;
-
-                    printf("__datum_id__ __ellipse___ __definition/comments______________________________\n" );
-                    for (ld = pj_get_datums_ref(); ld->id ; ++ld)
+                    auto units = proj_get_units_from_database(nullptr, nullptr, "linear", false, nullptr);
+                    for( int i = 0; units && units[i]; i++ )
                     {
-                        printf("%12s %-12s %-30s\n",
-                               ld->id, ld->ellipse_id, ld->defn);
-                        if( ld->comments != nullptr && strlen(ld->comments) > 0 )
-                            printf( "%25s %s\n", " ", ld->comments );
+                        if( units[i]->proj_short_name )
+                        {
+                            (void)printf("%12s %-20.15g %s\n",
+                                            units[i]->proj_short_name,
+                                            units[i]->conv_factor,
+                                            units[i]->name);
+                        }
                     }
+                    proj_unit_list_destroy(units);
                 } else
                     emess(1,"invalid list option: l%c",arg[1]);
                 exit(0);
@@ -453,10 +452,7 @@ int main(int argc, char **argv) {
             }
             break;
         } else if (**argv == '+') { /* + argument */
-            if (pargc < MAX_PARGS)
-                pargv[pargc++] = *argv + 1;
-            else
-                emess(1,"overflowed + argument table");
+            argvVector.push_back(*argv + 1);
         } else /* assumed to be input file name(s) */
             eargv[eargc++] = *argv;
     }
@@ -476,9 +472,14 @@ int main(int argc, char **argv) {
         postscale = 0;
         fscale = 1./fscale;
     }
-    if (!(Proj = pj_init(pargc, pargv)))
+    proj_context_use_proj4_init_rules(nullptr, true);
+
+    // proj historically ignores any datum shift specifier, like nadgrids, towgs84, etc
+    argvVector.push_back(const_cast<char*>("break_cs2cs_recursion"));
+
+    if (!(Proj = proj_create_argv(nullptr, static_cast<int>(argvVector.size()), argvVector.data())))
         emess(3,"projection initialization failure\ncause: %s",
-              pj_strerrno(pj_errno));
+              proj_errno_string(proj_context_errno(nullptr)));
 
     if (!proj_angular_input(Proj, PJ_FWD)) {
         emess(3, "can't initialize operations that take non-angular input coordinates");
@@ -488,6 +489,14 @@ int main(int argc, char **argv) {
     if (proj_angular_output(Proj, PJ_FWD)) {
         emess(3, "can't initialize operations that produce angular output coordinates");
         exit(0);
+    }
+
+    // Ugly hack. See https://github.com/OSGeo/PROJ/issues/1782
+    if( Proj->right == PJ_IO_UNITS_WHATEVER && Proj->descr &&
+        strncmp(Proj->descr, "General Oblique Transformation",
+                strlen("General Oblique Transformation")) == 0 )
+    {
+        Proj->right = PJ_IO_UNITS_PROJECTED;
     }
 
     if (inverse) {
@@ -555,7 +564,7 @@ int main(int argc, char **argv) {
     }
 
     if( Proj )
-        pj_free(Proj);
+        proj_destroy(Proj);
 
     exit(0); /* normal completion */
 }

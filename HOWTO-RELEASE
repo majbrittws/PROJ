@@ -30,6 +30,9 @@ list. The PROJ PSC guidelines describes the rules for passing a motion.
 1.1 Update ABI version numbers:
 -------------------------------------------------------------------------------
 
+In case of a un-planned maintenance release, make sure that version numbers are
+propertly updated: see 3.1
+
 Determine the ABI version number. It consists of "current:revision:age". Follow
 the steps below to determine the next ABI version number:
 
@@ -48,8 +51,8 @@ the steps below to determine the next ABI version number:
 Update the following files with the new ABI version number:
 
     - `src/Makefile.am`     Update -version-info
-    - `CMakelists.txt`:     Update PROJ_BUILD_VERSION (cur:rev:age) and
-                            PROJ_API_VERSION (current)
+    - `CMakeLists.txt`:     Update PROJ_BUILD_VERSION (cur:rev:age) and
+                            PROJ_API_VERSION (current-age)
 
 *Commit the changes to master.*
 
@@ -57,14 +60,11 @@ Update the following files with the new ABI version number:
 1.2 Update man pages
 -------------------------------------------------------------------------------
 
-Man pages are (mostly) automatically generated from the Sphinx docs. The pages
-in man/man3/ was manually updated in 1.1. Here we update the pages in
-man/man1/. Follow these steps:
+Man pages are (mostly) automatically generated from the Sphinx docs. Follow
+these steps:
 
-    - Update version number and date in `man/man3/pj_init.3` and
-      `man/man3/geodesic.3`
-    - Temporarily update version in `docs/source/conf.py`
-    - run `script/update_man.sh`
+    - Temporarily update `version` and `data_version` in `docs/source/conf.py`
+    - run `scripts/update_man.sh`
     - Revert version number in `docs/source/conf.py`
 
 The `update_man.sh` script builds the man pages and commits the update man pages
@@ -176,9 +176,17 @@ See step 1.6 above. Do not rename the archives with RC postfixes.
 ------------------------------------------------------------------------------
 
   - Add the release notes from `NEWS` to `docs/source/news.rst`
+
+    These vim substitutions are helpfull when converting NEWS to rst:
+
+    :s!(\#\(\d\{4}\))!(`\#\1 <https://github.com/OSGeo/PROJ/issues/\1>`_)!
+    :s/^o/*/
+
   - Update download links in `docs/source/download.rst`
   - Update `$TRAVIS_BRANCH` in `travis\after_success.sh` to new maintenance
     branch.
+
+
 
 *Commit the changes to master and cherry-pick into maintenance branch.*
 
@@ -228,9 +236,9 @@ version numbers in the files.
   - src/proj.h:           Update PROJ_VERSION_MAJOR, PROJ_VERSION_MINOR and
                           PROJ_VERSION_PATCH.
   - src/proj_api.h:       Update PJ_VERSION.
-  - src/pj_release.c:     Update date to the scheduled release date.
-  - CMakelists.txt:       Update proj_version()
-  - doc/source/conf.py:   Update version number
+  - src/release.cpp:      Update date to the scheduled release date.
+  - CMakeLists.txt:       Update proj_version()
+  - docs/source/conf.py:   Update version number
 
 
 *Commit changes. Either to master or maintenance branch depending on the nature
@@ -243,3 +251,6 @@ If the previous active version was, let's say, 6.1 and the new version is, let's
 then checkout 6.1 branch, and in travis/after_success.sh, remove the code
 that causes commits to 6.1 to cause a website refresh, that is remove the
 code under `if test "$TRAVIS_SECURE_ENV_VARS" = "true" -a "$TRAVIS_BRANCH" = "6.1"; then`.
+
+Also edit docs/source/conf.py to change the active branch for documentation
+in the `github_version` variable.

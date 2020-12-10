@@ -78,6 +78,9 @@ Thomas Knudsen, thokn@sdfe.dk, 2016-05-25/2017-10-26
 #include <string.h>
 #include <stdarg.h>
 
+#include <fstream> // std::ifstream
+#include <iostream>
+
 #include "proj.h"
 #include "proj_internal.h"
 #include "proj_strtod.h"
@@ -161,19 +164,13 @@ static void logger(void *data, int level, const char *msg) {
 
     /* if we use PJ_LOG_NONE we always want to print stuff to stream */
     if (level == PJ_LOG_NONE) {
-        fprintf(stream, "%s", msg);
+        fprintf(stream, "%s\n", msg);
         return;
     }
 
-    /* should always print to stderr if level == PJ_LOG_ERROR */
-    if (level == PJ_LOG_ERROR) {
-        fprintf(stderr, "%s", msg);
-        return;
-    }
-
-    /* otherwise only print if log level set by user is high enough */
-    if (level <= log_tell)
-        fprintf(stream, "%s", msg);
+    /* otherwise only print if log level set by user is high enough or error */
+    if (level <= log_tell || level == PJ_LOG_ERROR)
+        fprintf(stderr, "%s\n", msg);
 }
 
 FILE *fout;
@@ -199,9 +196,8 @@ static void print(PJ_LOG_LEVEL log_level, const char *fmt, ...) {
     free( msg_buf );
 }
 
-
 int main(int argc, char **argv) {
-    PJ *P;
+    PJ *P = nullptr;
     PJ_COORD point;
     PJ_PROJ_INFO info;
     OPTARGS *o;
@@ -240,23 +236,25 @@ int main(int argc, char **argv) {
     PJ_DIRECTION direction = opt_given (o, "I")? PJ_INV: PJ_FWD;
 
     verbose   = MIN(opt_given (o, "v"), 3); /* log level can't be larger than 3 */
-    proj_log_level (PJ_DEFAULT_CTX, static_cast<PJ_LOG_LEVEL>(verbose));
+    if( verbose > 0 ) {
+        proj_log_level (PJ_DEFAULT_CTX, static_cast<PJ_LOG_LEVEL>(verbose));
+    }
     proj_log_func  (PJ_DEFAULT_CTX, (void *) fout, logger);
 
     if (opt_given (o, "version")) {
-        print (PJ_LOG_NONE, "%s: %s\n", o->progname, pj_get_release ());
+        print (PJ_LOG_NONE, "%s: %s", o->progname, pj_get_release ());
         return 0;
     }
 
     if (opt_given (o, "o"))
         fout = fopen (opt_arg (o, "output"), "wt");
     if (nullptr==fout) {
-        print (PJ_LOG_ERROR, "%s: Cannot open '%s' for output\n", o->progname, opt_arg (o, "output"));
+        print (PJ_LOG_ERROR, "%s: Cannot open '%s' for output", o->progname, opt_arg (o, "output"));
         free (o);
         return 1;
     }
 
-    print (PJ_LOG_TRACE, "%s: Running in very verbose mode\n", o->progname);
+    print (PJ_LOG_TRACE, "%s: Running in very verbose mode", o->progname);
 
     if (opt_given (o, "z")) {
         fixed_z = proj_atof (opt_arg (o, "z"));
@@ -287,7 +285,7 @@ int main(int argc, char **argv) {
         /* cppcheck-suppress invalidscanf */
         ncols = sscanf (opt_arg (o, "c"), "%d,%d,%d,%d", columns_xyzt, columns_xyzt+1, columns_xyzt+2, columns_xyzt+3);
         if (ncols != nfields) {
-            print (PJ_LOG_ERROR, "%s: Too few input columns given: '%s'\n", o->progname, opt_arg (o, "c"));
+            print (PJ_LOG_ERROR, "%s: Too few input columns given: '%s'", o->progname, opt_arg (o, "c"));
             free (o);
             if (stdout != fout)
                 fclose (fout);
@@ -296,10 +294,73 @@ int main(int argc, char **argv) {
     }
 
     /* Setup transformation */
-    P = proj_create_argv (nullptr, o->pargc, o->pargv);
-    if ((nullptr==P) || (0==o->pargc)) {
-        print (PJ_LOG_ERROR, "%s: Bad transformation arguments - (%s)\n    '%s -h' for help\n",
-                 o->progname, pj_strerrno (proj_errno(P)), o->progname);
+    if (o-> pargc == 0 && o->fargc > 0) {
+        std::string input(o->fargv[0]);
+
+        if (!input.empty() && input[0] == '@') {
+            std::ifstream fs;
+            auto filename = input.substr(1);
+            fs.open(filename, std::fstream::in | std::fstream::binary);
+            if (!fs.is_open()) {
+                std::cerr << "cannot open " << filename << std::endl;
+                std::exit(1);
+            }
+            input.clear();
+            while (!fs.eof()) {
+                char buffer[256];
+                fs.read(buffer, sizeof(buffer));
+                input.append(buffer, static_cast<size_t>(fs.gcount()));
+                if (input.size() > 100 * 1000) {
+                    fs.close();
+                    std::cerr << "too big file " << filename << std::endl;
+                    std::exit(1);
+                }
+            }
+            fs.close();
+        }
+
+        /* Assume we got a auth:code combination */
+        auto n = input.find(":");
+        if (n > 0) {
+            std::string auth = input.substr(0,n);
+            std::string code = input.substr(n+1, input.length());
+            // Check that the authority matches one of the known ones
+            auto authorityList = proj_get_authorities_from_database(nullptr);
+            if( authorityList )
+            {
+                for( auto iter = authorityList; *iter; iter++ )
+                {
+                    if( *iter == auth ) {
+                        P = proj_create_from_database(
+                                nullptr, auth.c_str(), code.c_str(),
+                                PJ_CATEGORY_COORDINATE_OPERATION, 0, nullptr);
+                        break;
+                    }
+                }
+                proj_string_list_destroy(authorityList);
+            }
+        }
+        if( P == nullptr ) {
+            /* if we didn't get a auth:code combo we try to see if the input matches */
+            /* anything else */
+            P = proj_create(nullptr, input.c_str());
+        }
+
+        /* If instantiating operation without +-options optargpm thinks the input is  */
+        /* a file, hence we move all o->fargv entries one place closer to the start   */
+        /* of the array. This effectively overwrites the input and only leaves a list */
+        /* of files in o->fargv.                                                      */
+        o->fargc = o->fargc-1;
+        for (int j=0; j < o->fargc; j++) {
+            o->fargv[j] = o->fargv[j+1];
+        }
+    } else {
+        P = proj_create_argv (nullptr, o->pargc, o->pargv);
+    }
+
+    if (nullptr==P) {
+        print (PJ_LOG_ERROR, "%s: Bad transformation arguments - (%s)\n    '%s -h' for help",
+                 o->progname, proj_errno_string (proj_errno(P)), o->progname);
         free (o);
         if (stdout != fout)
             fclose (fout);
@@ -307,12 +368,12 @@ int main(int argc, char **argv) {
     }
 
     info = proj_pj_info (P);
-    print (PJ_LOG_TRACE, "Final: %s argc=%d pargc=%d\n", info.definition, argc, o->pargc);
+    print (PJ_LOG_TRACE, "Final: %s argc=%d pargc=%d", info.definition, argc, o->pargc);
 
     if (direction== PJ_INV) {
         /* fail if an inverse operation is not available */
         if (!info.has_inverse) {
-            print (PJ_LOG_ERROR, "Inverse operation not available\n");
+            print (PJ_LOG_ERROR, "Inverse operation not available");
             if (stdout != fout)
                 fclose (fout);
             return 1;
@@ -325,8 +386,8 @@ int main(int argc, char **argv) {
     /* Allocate input buffer */
     buf = static_cast<char*>(calloc (1, 10000));
     if (nullptr==buf) {
-        print (PJ_LOG_ERROR, "%s: Out of memory\n", o->progname);
-        pj_free (P);
+        print (PJ_LOG_ERROR, "%s: Out of memory", o->progname);
+        proj_destroy (P);
         free (o);
         if (stdout != fout)
             fclose (fout);
@@ -341,7 +402,7 @@ int main(int argc, char **argv) {
         char *c = column (buf, 1);
         opt_eof_handler (o);
         if (nullptr==ret) {
-            print (PJ_LOG_ERROR, "Read error in record %d\n", (int) o->record_index);
+            print (PJ_LOG_ERROR, "Read error in record %d", (int) o->record_index);
             continue;
         }
         point = parse_input_line (buf, columns_xyzt, fixed_z, fixed_time);
@@ -359,7 +420,7 @@ int main(int argc, char **argv) {
         if (HUGE_VAL==point.xyzt.x) {
             /* otherwise, it must be a syntax error */
             print (PJ_LOG_NONE, "# Record %d UNREADABLE: %s", (int) o->record_index, buf);
-            print (PJ_LOG_ERROR, "%s: Could not parse file '%s' line %d\n", o->progname, opt_filename (o), opt_record (o));
+            print (PJ_LOG_ERROR, "%s: Could not parse file '%s' line %d", o->progname, opt_filename (o), opt_record (o));
             continue;
         }
 
@@ -374,7 +435,7 @@ int main(int argc, char **argv) {
         if (HUGE_VAL==point.xyzt.x) {
             /* transformation error */
             print (PJ_LOG_NONE, "# Record %d TRANSFORMATION ERROR: %s (%s)",
-                   (int) o->record_index, buf, pj_strerrno (proj_errno(P)));
+                   (int) o->record_index, buf, proj_errno_string (proj_errno(P)));
             proj_errno_restore (P, err);
             continue;
         }
@@ -389,13 +450,23 @@ int main(int argc, char **argv) {
                 colmax = MAX(colmax, columns_xyzt[i]);
             comment = column(buf, colmax+1);
         }
+        /* remove the line feed from comment, as logger() above, invoked
+           by print() below (output), will add one */
+        size_t len = strlen(comment);
+        if (len >= 1)
+            comment[len - 1] = '\0';
         comment_delimiter = (comment && *comment) ? whitespace : blank_comment;
 
         /* Time to print the result */
-        if (proj_angular_output (P, direction)) {
-            point.lpzt.lam = proj_todeg (point.lpzt.lam);
-            point.lpzt.phi = proj_todeg (point.lpzt.phi);
-            print (PJ_LOG_NONE, "%14.*f  %14.*f  %12.*f  %12.4f%s%s\n",
+        /* use same arguments to printf format string for both radians and
+           degrees; convert radians to degrees before printing */
+        if (proj_angular_output (P, direction) ||
+            proj_degree_output (P, direction)) {
+            if (proj_angular_output (P, direction)) {
+                point.lpzt.lam = proj_todeg (point.lpzt.lam);
+                point.lpzt.phi = proj_todeg (point.lpzt.phi);
+            }
+            print (PJ_LOG_NONE, "%14.*f  %14.*f  %12.*f  %12.4f%s%s",
                    decimals_angles, point.xyzt.x,
                    decimals_angles, point.xyzt.y,
                    decimals_distances, point.xyzt.z,
@@ -403,12 +474,14 @@ int main(int argc, char **argv) {
             );
         }
         else
-            print (PJ_LOG_NONE, "%13.*f  %13.*f  %12.*f  %12.4f%s%s\n",
+            print (PJ_LOG_NONE, "%13.*f  %13.*f  %12.*f  %12.4f%s%s",
                    decimals_distances, point.xyzt.x,
                    decimals_distances, point.xyzt.y,
                    decimals_distances, point.xyzt.z,
                    point.xyzt.t, comment_delimiter, comment
             );
+        if( fout == stdout )
+            fflush(stdout);
     }
 
     proj_destroy(P);

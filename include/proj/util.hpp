@@ -92,6 +92,15 @@ namespace proj {}
 #include "nn.hpp"
 
 /* To allow customizing the base namespace of PROJ */
+#ifdef PROJ_INTERNAL_CPP_NAMESPACE
+#define NS_PROJ osgeo::internalproj
+#define NS_PROJ_START                                                          \
+    namespace osgeo {                                                          \
+    namespace internalproj {
+#define NS_PROJ_END                                                            \
+    }                                                                          \
+    }
+#else
 #ifndef NS_PROJ
 #define NS_PROJ osgeo::proj
 #define NS_PROJ_START                                                          \
@@ -100,6 +109,7 @@ namespace proj {}
 #define NS_PROJ_END                                                            \
     }                                                                          \
     }
+#endif
 #endif
 
 // Private-implementation (Pimpl) pattern
@@ -166,6 +176,13 @@ namespace proj {}
 
 NS_PROJ_START
 
+//! @cond Doxygen_Suppress
+namespace io {
+class DatabaseContext;
+using DatabaseContextPtr = std::shared_ptr<DatabaseContext>;
+}
+//! @endcond
+
 /** osgeo.proj.util namespace.
  *
  * \brief A set of base types from ISO 19103, \ref GeoAPI and other PROJ
@@ -195,6 +212,14 @@ template <typename T> using nn_shared_ptr = nn<std::shared_ptr<T>>;
 
 // To avoid formatting differences between clang-format 3.8 and 7
 #define PROJ_NOEXCEPT noexcept
+
+//! @cond Doxygen_Suppress
+// isOfExactType<MyType>(*p) checks that the type of *p is exactly MyType
+template <typename TemplateT, typename ObjectT>
+inline bool isOfExactType(const ObjectT &o) {
+    return typeid(TemplateT).hash_code() == typeid(o).hash_code();
+}
+//! @endcond
 
 /** \brief Loose transposition of [std::optional]
  * (https://en.cppreference.com/w/cpp/utility/optional) available from C++17. */
@@ -289,7 +314,7 @@ struct BaseObjectNNPtr : public util::nn<BaseObjectPtr> {
 using BaseObjectNNPtr = util::nn<BaseObjectPtr>;
 #endif
 
-/** \brief Class that can be derived from, to emulate Java's Object behaviour.
+/** \brief Class that can be derived from, to emulate Java's Object behavior.
  */
 class PROJ_GCC_DLL BaseObject {
   public:
@@ -342,15 +367,18 @@ class PROJ_GCC_DLL IComparable {
         EQUIVALENT_EXCEPT_AXIS_ORDER_GEOGCRS,
     };
 
-    PROJ_DLL bool isEquivalentTo(const IComparable *other,
-                                 Criterion criterion = Criterion::STRICT) const;
+    PROJ_DLL bool
+    isEquivalentTo(const IComparable *other,
+                   Criterion criterion = Criterion::STRICT,
+                   const io::DatabaseContextPtr &dbContext = nullptr) const;
 
     PROJ_PRIVATE :
 
         //! @cond Doxygen_Suppress
         PROJ_INTERNAL virtual bool
-        _isEquivalentTo(const IComparable *other,
-                        Criterion criterion = Criterion::STRICT) const = 0;
+        _isEquivalentTo(
+            const IComparable *other, Criterion criterion = Criterion::STRICT,
+            const io::DatabaseContextPtr &dbContext = nullptr) const = 0;
     //! @endcond
 };
 
@@ -672,7 +700,7 @@ class CodeList {
     //! @endcond
   protected:
     explicit CodeList(const std::string &nameIn) : name_(nameIn) {}
-    CodeList(const CodeList &other) = default;
+    CodeList(const CodeList &) = default;
     CodeList &operator=(const CodeList &other);
 
   private:

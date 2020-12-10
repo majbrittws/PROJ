@@ -9,6 +9,8 @@ Kinematic datum shifting utilizing a deformation model
 Perform datum shifts means of a deformation/velocity model.
 
 +-----------------+--------------------------------------------------------------------+
+| **Alias**       | deformation                                                        |
++-----------------+--------------------------------------------------------------------+
 | **Input type**  | Cartesian coordinates (spatial), decimalyears (temporal).          |
 +-----------------+--------------------------------------------------------------------+
 | **Output type** | Cartesian coordinates (spatial), decimalyears (temporal).          |
@@ -35,6 +37,11 @@ GTX format. Both grids are expected to contain grid-values in units of
 mm/year. GDAL both reads and writes both file formats. Using GDAL for
 construction of new grids is recommended.
 
+Starting with PROJ 7.0, use of a GeoTIFF format is recommended to store both
+the horizontal and vertical velocities.
+
+More complex deformations can be done with the :ref:`Multi-component time-based deformation model <defmodel>` transformation.
+
 Example
 -------------------------------------------------------------------------------
 
@@ -57,8 +64,7 @@ to the Danish realisation of ETRS89 is in PROJ described as::
             z = -0.048  rz = -0.008712 drz = -0.000792
             # ETRF2000@t_obs -> NKG_ETRF00@2000.0
     step    proj = deformation t_epoch = 2000.0
-            xy_grids = ./nkgrf03vel_realigned_xy.ct2
-            z_grids  = ./nkgrf03vel_realigned_z.gtx
+            grids = ./eur_nkg_nkgrf03vel_realigned.tif
             inv
             # NKG_ETRF@2000.0 -> ETRF92@2000.0
     step    proj=helmert convention=position_vector s = -0.009420e
@@ -67,16 +73,13 @@ to the Danish realisation of ETRS89 is in PROJ described as::
             z = 0.02776 rz = 4.729e-05
             # ETRF92@2000.0 -> ETRF92@1994.704
     step    proj = deformation dt = -5.296
-            xy_grids = ./nkgrf03vel_realigned_xy.ct2
-            z_grids  = ./nkgrf03vel_realigned_z.gtx
+            grids = ./eur_nkg_nkgrf03vel_realigned.tif
 
 From this we can see that the transformation from ITRF2008 to the Danish realisation of
 ETRS89 is a combination of Helmert transformations and adjustments with a deformation
 model. The first use of the deformation operation is::
 
-    proj = deformation t_epoch = 2000.0
-    xy_grids = ./nkgrf03vel_realigned_xy.ct2
-    z_grids  = ./nkgrf03vel_realigned_z.gtx
+    proj = deformation t_epoch = 2000.0 grids = ./eur_nkg_nkgrf03vel_realigned.tif
 
 Here we set the central epoch of the transformation, 2000.0. The observation epoch
 is expected as part of the input coordinate tuple. The deformation model is
@@ -89,12 +92,14 @@ Parameters
 
 .. option:: +xy_grids=<list>
 
-    Comma-separated list of grids to load. If a grid is prefixed by an `@` the
+    Comma-separated list of grids to load. If a grid is prefixed by an ``@`` the
     grid is considered optional and PROJ will the not complain if the grid is
     not available.
 
-    Grids for the horizontla component of a deformation model is expected to be
+    Grids for the horizontal component of a deformation model is expected to be
     in CTable2 format.
+
+    .. note:: :option:`+xy_grids` is mutually exclusive with :option:`+grids`
 
 .. option:: +z_grids=<list>
 
@@ -104,6 +109,36 @@ Parameters
 
     Grids for the vertical component of a deformation model is expected to be
     in either GTX format.
+
+    .. note:: :option:`+z_grids` is mutually exclusive with :option:`+grids`
+
+.. option:: +grids=<list>
+
+    .. versionadded:: 7.0.0
+
+    Comma-separated list of grids to load. If a grid is prefixed by an `@` the
+    grid is considered optional and PROJ will the not complain if the grid is
+    not available.
+
+    Grids should be in GeoTIFF format with the first 3 components being
+    respectively the easting, northing and up velocities in mm/year.
+    Setting the Description and Unit Type GDAL band metadata items is strongly
+    recommended, so that gdalinfo reports:
+
+    ::
+
+        Band 1 Block=... Type=Float32, ColorInterp=Gray
+            Description = east_velocity
+            Unit Type: mm/year
+        Band 2 Block=... Type=Float32, ColorInterp=Undefined
+            Description = north_velocity
+            Unit Type: mm/year
+        Band 3 Block=... Type=Float32, ColorInterp=Undefined
+            Description = up_velocity
+            Unit Type: mm/year
+
+    .. note:: :option:`+grids` is mutually exclusive with :option:`+xy_grids`
+              and :option:`+z_grids`
 
 .. option:: +t_epoch=<value>
 

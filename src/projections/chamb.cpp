@@ -29,7 +29,7 @@ PROJ_HEAD(chamb, "Chamberlin Trimetric") "\n\tMisc Sph, no inv"
 #define TOL 1e-9
 
 /* distance and azimuth from point 1 to point 2 */
-static VECT vect(projCtx ctx, double dphi, double c1, double s1, double c2, double s2, double dlam) {
+static VECT vect(PJ_CONTEXT *ctx, double dphi, double c1, double s1, double c2, double s2, double dlam) {
     VECT v;
     double cdl, dp, dl;
 
@@ -49,7 +49,7 @@ static VECT vect(projCtx ctx, double dphi, double c1, double s1, double c2, doub
 }
 
 /* law of cosines */
-static double lc(projCtx ctx, double b,double c,double a) {
+static double lc(PJ_CONTEXT *ctx, double b,double c,double a) {
     return aacos(ctx, .5 * (b * b + c * c - a * a) / (b * c));
 }
 
@@ -103,7 +103,7 @@ static PJ_XY chamb_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forwar
 PJ *PROJECTION(chamb) {
     int i, j;
     char line[10];
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
@@ -129,10 +129,14 @@ PJ *PROJECTION(chamb) {
     Q->beta_0 = lc(P->ctx,Q->c[0].v.r, Q->c[2].v.r, Q->c[1].v.r);
     Q->beta_1 = lc(P->ctx,Q->c[0].v.r, Q->c[1].v.r, Q->c[2].v.r);
     Q->beta_2 = M_PI - Q->beta_0;
-    Q->p.y = 2. * (Q->c[0].p.y = Q->c[1].p.y = Q->c[2].v.r * sin(Q->beta_0));
+    Q->c[0].p.y = Q->c[2].v.r * sin(Q->beta_0);
+    Q->c[1].p.y = Q->c[0].p.y;
+    Q->p.y = 2. * Q->c[0].p.y;
     Q->c[2].p.y = 0.;
-    Q->c[0].p.x = - (Q->c[1].p.x = 0.5 * Q->c[0].v.r);
-    Q->p.x = Q->c[2].p.x = Q->c[0].p.x + Q->c[2].v.r * cos(Q->beta_0);
+    Q->c[1].p.x = 0.5 * Q->c[0].v.r;
+    Q->c[0].p.x = -Q->c[1].p.x;
+    Q->c[2].p.x = Q->c[0].p.x + Q->c[2].v.r * cos(Q->beta_0);
+    Q->p.x = Q->c[2].p.x;
 
     P->es = 0.;
     P->fwd = chamb_s_forward;

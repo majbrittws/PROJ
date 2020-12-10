@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT([PROJ], [7.0.0],
+AC_INIT([PROJ], [8.0.0],
         [https://github.com/OSGeo/PROJ/issues], proj, [https://proj.org])
 AC_CONFIG_MACRO_DIR([m4])
 AC_LANG(C)
@@ -19,6 +19,8 @@ AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 AM_PROG_LIBTOOL
+
+PKG_PROG_PKG_CONFIG
 
 dnl Enable as much warnings as possible
 AX_CFLAGS_WARN_ALL(C_WFLAGS)
@@ -87,7 +89,6 @@ dnl C++ specific stuff
 
 AC_LANG_PUSH([C++])
 AX_CHECK_COMPILE_FLAG([-Wunused-private-field], [CXX_WFLAGS="$CXX_WFLAGS -Wunused-private-field"],,[$ERROR_ON_UNKNOWN_OPTIONS])
-AX_CHECK_COMPILE_FLAG([-Wmissing-prototypes], [CXX_WFLAGS="$CXX_WFLAGS -Wmissing-prototypes"],,[$ERROR_ON_UNKNOWN_OPTIONS])
 AX_CHECK_COMPILE_FLAG([-Wmissing-declarations], [CXX_WFLAGS="$CXX_WFLAGS -Wmissing-declarations"],,[$ERROR_ON_UNKNOWN_OPTIONS])
 AX_CHECK_COMPILE_FLAG([-Wnon-virtual-dtor], [CXX_WFLAGS="$CXX_WFLAGS -Wnon-virtual-dtor" NO_NON_VIRTUAL_DTOR_FLAG="-Wno-non-virtual-dtor"],,[$ERROR_ON_UNKNOWN_OPTIONS])
 AX_CHECK_COMPILE_FLAG([-Wold-style-cast], [WARN_OLD_STYLE_CAST="-Wold-style-cast"],,[$ERROR_ON_UNKNOWN_OPTIONS])
@@ -124,7 +125,6 @@ if test "$HAVE_GCC_WARNING_ZERO_AS_NULL_POINTER_CONSTANT" = "yes"; then
 AC_DEFINE_UNQUOTED(HAVE_GCC_WARNING_ZERO_AS_NULL_POINTER_CONSTANT, 1,
           [Define to 1 if the compiler supports -Wzero-as-null-pointer-constant])
 fi
-
 AC_LANG_POP([C++])
 
 dnl ---------------------------------------------------------------------------
@@ -169,6 +169,15 @@ AC_SUBST(NO_ZERO_AS_NULL_POINTER_CONSTANT_FLAG,$NO_ZERO_AS_NULL_POINTER_CONSTANT
 CFLAGS="${CFLAGS} -fvisibility=hidden"
 CXXFLAGS="${CXXFLAGS} -fvisibility=hidden"
 
+case "${host_os}" in
+    cygwin* | mingw32* | pw32* | beos* | darwin*)
+        CFLAGS="${CFLAGS} -DNOMINMAX"
+        CXXFLAGS="${CXXFLAGS} -DNOMINMAX"
+        ;;
+    *)
+        ;;
+esac
+
 dnl Checks for libraries.
 save_CFLAGS="$CFLAGS"
 CFLAGS=`echo "$CFLAGS" | sed "s/-Werror/ /"`
@@ -189,60 +198,7 @@ AC_SEARCH_LIBS([sqrt], [m])
 
 AC_CHECK_FUNC(localeconv, [AC_DEFINE(HAVE_LOCALECONV,1,[Define to 1 if you have localeconv])])
 AC_CHECK_FUNCS([strerror])
-
-dnl ---------------------------------------------------------------------------
-dnl Check for JNI support.
-dnl ---------------------------------------------------------------------------
-
-JNI_INCLUDE=
-export JNI_INCLUDE
-
-AC_ARG_WITH(jni,
-            [AS_HELP_STRING([--with-jni=dir],
-                            [Include Java/JNI support, add optional include dir])
-            ],,)
-
-if test "$with_jni" = "yes" ; then
-
-  AC_DEFINE(JNI_ENABLED,1,[Enabled for Java/JNI Support])
-
-  AC_MSG_CHECKING(whether to enable Java/JNI support)
-
-  AC_MSG_RESULT([enabled])
-
-elif test "$with_jni" != "no" -a "$with_jni" != "" ; then
-
-  AC_MSG_CHECKING(whether to enable Java/JNI support)
-
-  if test \! -r "$with_jni/jni.h" ; then
-    AC_MSG_ERROR(Did not find $with_jni/jni.h)
-  fi
-
-  AC_DEFINE(JNI_ENABLED,1,[Enabled for Java/JNI Support])
-
-  AC_MSG_RESULT([enabled])
-
-  JNI_INCLUDE="-I$with_jni"
-
-elif test "$with_jni" = "" ; then
-  AC_CHECK_HEADERS(jni.h)
-
-  AC_MSG_CHECKING(whether to enable Java/JNI support)
-
-  if test "$ac_cv_header_jni_h" = "no" ; then
-    AC_MSG_RESULT([disabled])
-  else
-    AC_MSG_RESULT([enabled])
-    AC_DEFINE(JNI_ENABLED,1,[Enabled for Java/JNI Support])
-  fi
-
-else
-  AC_MSG_CHECKING(whether to enable Java/JNI support)
-
-  AC_MSG_RESULT([disabled])
-fi
-
-AC_SUBST(JNI_INCLUDE,$JNI_INCLUDE)
+AC_CHECK_LIB(dl,dladdr,,,)
 
 dnl ---------------------------------------------------------------------------
 dnl Provide a mechanism to disable real mutex support (if lacking win32 or
@@ -280,7 +236,11 @@ dnl Check for sqlite3 library and binary
 dnl ---------------------------------------------------------------------------
 
 if test "x$SQLITE3_CFLAGS$SQLITE3_LIBS" = "x" ; then
-    PKG_CHECK_MODULES([SQLITE3], [sqlite3 >= 3.7])
+
+    dnl Would build and run with older versions, but with horrible performance
+    dnl See https://github.com/OSGeo/PROJ/issues/1718
+
+    PKG_CHECK_MODULES([SQLITE3], [sqlite3 >= 3.11])
 fi
 AC_SUBST(SQLITE3_CFLAGS,$SQLITE3_CFLAGS)
 AC_SUBST(SQLITE3_LIBS,$SQLITE3_LIBS)
@@ -289,6 +249,77 @@ AC_CHECK_PROG(SQLITE3_CHECK,sqlite3,yes)
 if test x"$SQLITE3_CHECK" != x"yes" ; then
     AC_MSG_ERROR([Please install sqlite3 binary.])
 fi
+
+dnl ---------------------------------------------------------------------------
+dnl Check for libtiff
+dnl ---------------------------------------------------------------------------
+
+AC_ARG_ENABLE([tiff],
+              AS_HELP_STRING([--enable-tiff],
+                    [Enable TIFF support; strongly encouraged to read some grids [default=yes]]))
+
+if test "x$enable_tiff" != "xno" -o "x$enable_tiff" = ""; then
+    if test "x$TIFF_CFLAGS$TIFF_LIBS" = "x" ; then
+        if $PKG_CONFIG libtiff; then
+            PKG_CHECK_MODULES([TIFF], [libtiff])
+        else
+            PKG_CHECK_MODULES([TIFF], [libtiff-4])
+        fi
+    fi
+    TIFF_ENABLED_FLAGS=-DTIFF_ENABLED
+fi
+AC_SUBST(TIFF_CFLAGS,$TIFF_CFLAGS)
+AC_SUBST(TIFF_LIBS,$TIFF_LIBS)
+AC_SUBST(TIFF_ENABLED_FLAGS,$TIFF_ENABLED_FLAGS)
+
+dnl ---------------------------------------------------------------------------
+dnl Check for curl
+dnl ---------------------------------------------------------------------------
+
+FOUND_CURL=no
+CURL_CFLAGS=
+CURL_LIB=
+
+AC_ARG_WITH(curl,
+    [  --with-curl[=ARG]         Enable curl support (ARG=path to curl-config.)],,,)
+
+dnl Clear some cache variables
+unset ac_cv_path_LIBCURL
+
+if test "`basename xx/$with_curl`" = "curl-config" ; then
+  LIBCURL_CONFIG="$with_curl"
+elif test "$with_curl" = "no" ; then
+  LIBCURL_CONFIG=no
+else
+  AC_PATH_PROG(LIBCURL_CONFIG, curl-config, not-found)
+fi
+
+if test "$LIBCURL_CONFIG" = "not-found" ; then
+  AC_MSG_ERROR([curl not found. If wanting to do a build without curl support (and thus without built-in networking capability), explictly disable it with --without-curl])
+elif test "$LIBCURL_CONFIG" != "no" ; then
+
+  CURL_VERNUM=`$LIBCURL_CONFIG --vernum`
+  CURL_VER=`$LIBCURL_CONFIG --version | awk '{print $2}'`
+
+  AC_MSG_RESULT([        found libcurl version $CURL_VER])
+
+  AC_CHECK_LIB(curl,curl_global_init,FOUND_CURL=yes,FOUND_CURL=no,`$LIBCURL_CONFIG --libs`)
+
+  if test "$FOUND_CURL" = "no" ; then
+    AC_MSG_ERROR([curl not found. If wanting to do a build without curl support (and thus without built-in networking capability), explictly disable it with --without-curl])
+  fi
+  CURL_ENABLED_FLAGS=-DCURL_ENABLED
+fi
+
+if test "$FOUND_CURL" = "yes" ; then
+  CURL_CFLAGS=`$LIBCURL_CONFIG --cflags`
+  CURL_LIBS=`$LIBCURL_CONFIG --libs`
+fi
+
+AC_SUBST(CURL_CFLAGS,$CURL_CFLAGS)
+AC_SUBST(CURL_LIBS,$CURL_LIBS)
+AC_SUBST(CURL_ENABLED_FLAGS,$CURL_ENABLED_FLAGS)
+AM_CONDITIONAL(HAVE_CURL, [test "x$FOUND_CURL" = "xyes"])
 
 dnl ---------------------------------------------------------------------------
 dnl Check for external Google Test
@@ -317,8 +348,7 @@ dnl ---------------------------------------------------------------------------
 AC_CONFIG_FILES([Makefile cmake/Makefile src/Makefile include/Makefile include/proj/Makefile include/proj/internal/Makefile
                  include/proj/internal/nlohmann/Makefile
                  test/Makefile test/cli/Makefile test/gie/Makefile test/gigs/Makefile test/unit/Makefile
-                 man/Makefile man/man1/Makefile man/man3/Makefile data/Makefile
-                 jniwrap/Makefile jniwrap/org.osgeo.proj/Makefile jniwrap/org.osgeo.proj/org/Makefile jniwrap/org.osgeo.proj/org/proj4/Makefile])
+                 man/Makefile man/man1/Makefile data/Makefile])
 if ! test "x$with_external_gtest" = "xyes" ; then
     AC_CONFIG_FILES([test/googletest/Makefile test/googletest/include/Makefile
                      test/googletest/include/gtest/Makefile

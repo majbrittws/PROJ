@@ -123,7 +123,7 @@ Thomas Knudsen, thokn@sdfe.dk, 2017-10-01/2017-10-08
 /* Package for flexible format I/O - ffio */
 typedef struct ffio {
     FILE *f;
-    const char **tags;
+    const char * const *tags;
     const char *tag;
     char *args;
     char *next_args;
@@ -133,23 +133,24 @@ typedef struct ffio {
     size_t argc;
     size_t lineno, next_lineno;
     size_t level;
+    bool strict_mode;
 }  ffio;
 
 static int get_inp (ffio *G);
 static int skip_to_next_tag (ffio *G);
 static int step_into_gie_block (ffio *G);
-static int locate_tag (ffio *G, const char *tag);
 static int nextline (ffio *G);
 static int at_end_delimiter (ffio *G);
 static const char *at_tag (ffio *G);
 static int at_decorative_element (ffio *G);
 static ffio *ffio_destroy (ffio *G);
-static ffio *ffio_create (const char **tags, size_t n_tags, size_t max_record_size);
+static ffio *ffio_create (const char * const *tags, size_t n_tags, size_t max_record_size);
 
-static const char *gie_tags[] = {
+static const char * const gie_tags[] = {
     "<gie>", "operation", "crs_src", "crs_dst", "use_proj4_init_rules",
     "accept", "expect", "roundtrip", "banner", "verbose",
-    "direction", "tolerance", "ignore", "require_grid", "echo", "skip", "</gie>"
+    "direction", "tolerance", "ignore", "require_grid", "echo", "skip", "</gie>",
+    "<gie-strict>", "</gie-strict>",
 };
 
 static const size_t n_gie_tags = sizeof gie_tags / sizeof gie_tags[0];
@@ -426,7 +427,12 @@ static int process_file (const char *fname) {
     if (F->level==0)
         return errmsg (-3, "File '%s':Missing '<gie>' cmnd - bye!\n", fname);
     if (F->level && F->level%2)
-        return errmsg (-4, "File '%s':Missing '</gie>' cmnd - bye!\n", fname);
+    {
+        if( F->strict_mode )
+            return errmsg (-4, "File '%s':Missing '</gie-strict>' cmnd - bye!\n", fname);
+        else
+            return errmsg (-4, "File '%s':Missing '</gie>' cmnd - bye!\n", fname);
+    }
     return 0;
 }
 
@@ -717,18 +723,27 @@ Attempt to interpret args as a PJ_COORD.
         /* This could be avoided if proj_dmstor used the same proj_strtod()  */
         /* as gie, but that is not the case (yet). When we remove projects.h */
         /* from the public API we can change that.                           */
+
+        // Even Rouault: unsure about the above. Coordinates are not necessarily
+        // geographic coordinates, and the roundtrip through radians for
+        // big projected coordinates cause inaccuracies, that can cause
+        // test failures when testing points at edge of grids.
+        // For example 1501000.0 becomes 1501000.000000000233
         double d = proj_strtod(prev,  (char **) &endp);
-        double dms = PJ_TODEG(proj_dmstor (prev, (char **) &dmsendp));
-       /* TODO: When projects.h is removed, call proj_dmstor() in all cases */
-        if (d != dms && fabs(d) < fabs(dms) && fabs(dms) < fabs(d) + 1) {
-            d = dms;
-            endp = dmsendp;
+        if( *endp != '\0' && !isspace(*endp) )
+        {
+            double dms = PJ_TODEG(proj_dmstor (prev, (char **) &dmsendp));
+            /* TODO: When projects.h is removed, call proj_dmstor() in all cases */
+            if (d != dms && fabs(d) < fabs(dms) && fabs(dms) < fabs(d) + 1) {
+                d = dms;
+                endp = dmsendp;
+            }
+            /* A number like -81d00'00.000 will be parsed correctly by both */
+            /* proj_strtod and proj_dmstor but only the latter will return  */
+            /* the correct end-pointer.                                     */
+            if (d == dms && endp != dmsendp)
+                endp = dmsendp;
         }
-        /* A number like -81d00'00.000 will be parsed correctly by both */
-        /* proj_strtod and proj_dmstor but only the latter will return  */
-        /* the correct end-pointer.                                     */
-        if (d == dms && endp != dmsendp)
-            endp = dmsendp;
 
         /* Break out if there were no more numerals */
         if (prev==endp)
@@ -865,8 +880,8 @@ static int expect_failure_with_errno_message (int expected, int got) {
         banner (T.operation);
     fprintf (T.fout, "%s", T.op_ko? "     -----\n": delim);
     fprintf (T.fout, "     FAILURE in %s(%d):\n",    opt_strip_path (T.curr_file), (int) F->lineno);
-    fprintf (T.fout, "     got errno %s (%d): %s\n", err_const_from_errno(got), got,  pj_strerrno (got));
-    fprintf (T.fout, "     expected %s (%d):  %s",   err_const_from_errno(expected), expected, pj_strerrno (expected));
+    fprintf (T.fout, "     got errno %s (%d): %s\n", err_const_from_errno(got), got,  proj_errno_string (got));
+    fprintf (T.fout, "     expected %s (%d):  %s",   err_const_from_errno(expected), expected, proj_errno_string (expected));
     fprintf (T.fout, "\n");
     return 1;
 }
@@ -919,7 +934,7 @@ Tell GIE what to expect, when transforming the ACCEPTed input
         /* Otherwise, it's a true failure */
         banner (T.operation);
         errmsg (3, "%sInvalid operation definition in line no. %d:\n       %s (errno=%s/%d)\n",
-            delim, (int) T.operation_lineno, pj_strerrno(proj_errno(T.P)),
+            delim, (int) T.operation_lineno, proj_errno_string (proj_errno(T.P)),
             err_const_from_errno (proj_errno(T.P)), proj_errno(T.P)
         );
         return another_failing_failure ();
@@ -1109,7 +1124,7 @@ static const struct errno_vs_err_const lookup[] = {
     {"pjd_err_invalid_x_or_y"           ,  -15},
     {"pjd_err_wrong_format_dms_value"   ,  -16},
     {"pjd_err_non_conv_inv_meri_dist"   ,  -17},
-    {"pjd_err_non_con_inv_phi2"         ,  -18},
+    {"pjd_err_non_conv_sinhpsi2tanphi"  ,  -18},
     {"pjd_err_acos_asin_arg_too_large"  ,  -19},
     {"pjd_err_tolerance_condition"      ,  -20},
     {"pjd_err_conic_lat_equal"          ,  -21},
@@ -1153,6 +1168,7 @@ static const struct errno_vs_err_const lookup[] = {
     {"pjd_err_inconsistent_unit"        ,  -59},
     {"pjd_err_mutually_exclusive_args"  ,  -60},
     {"pjd_err_generic_error"            ,  -61},
+    {"pjd_err_network_error"            ,  -62},
     {"pjd_err_dont_skip"                ,  5555},
     {"pjd_err_unknown"                  ,  9999},
     {"pjd_err_enomem"                   ,  ENOMEM},
@@ -1170,7 +1186,7 @@ static int list_err_codes (void) {
         if (9999==lookup[i].the_errno)
             break;
         fprintf (T.fout, "%25s  (%2.2d):  %s\n", lookup[i].the_err_const + 8,
-                 lookup[i].the_errno, pj_strerrno(lookup[i].the_errno));
+                 lookup[i].the_errno, proj_errno_string (lookup[i].the_errno));
     }
     return 0;
 }
@@ -1266,7 +1282,7 @@ See the PROJ ".gie" test suites for examples of supported formatting.
 
 
 /***************************************************************************************/
-static ffio *ffio_create (const char **tags, size_t n_tags, size_t max_record_size) {
+static ffio *ffio_create (const char * const *tags, size_t n_tags, size_t max_record_size) {
 /****************************************************************************************
 Constructor for the ffio object.
 ****************************************************************************************/
@@ -1395,24 +1411,6 @@ Read next line of input file. Returns 1 on success, 0 on failure.
 }
 
 
-
-/***************************************************************************************/
-static int locate_tag (ffio *G, const char *tag) {
-/****************************************************************************************
-Find start-of-line tag (currently only used to search for for <gie>, but any tag
-valid).
-
-Returns 1 on success, 0 on failure.
-****************************************************************************************/
-    size_t n = strlen (tag);
-    while (0!=strncmp (tag, G->next_args, n))
-        if (0==nextline (G))
-            return 0;
-    return 1;
-}
-
-
-
 /***************************************************************************************/
 static int step_into_gie_block (ffio *G) {
 /****************************************************************************************
@@ -1422,22 +1420,25 @@ Make sure we're inside a <gie>-block. Return 1 on success, 0 otherwise.
     if (G->level % 2)
         return 1;
 
-    if (0==locate_tag (G, "<gie>"))
-        return 0;
-
-    while (0!=strncmp ("<gie>", G->next_args, 5)) {
-        G->next_args[0] = 0;
-        if (feof (G->f))
+    while (strncmp (G->next_args, "<gie>", strlen("<gie>")) != 0 &&
+           strncmp (G->next_args, "<gie-strict>", strlen("<gie-strict>")) != 0 )
+    {
+        if (0==nextline (G))
             return 0;
-        if (nullptr==fgets (G->next_args, (int) G->next_args_size - 1, G->f))
-            return 0;
-        pj_chomp (G->next_args);
-        G->next_lineno++;
     }
+
     G->level++;
 
-    /* We're ready at the start - now step into the block */
-    return nextline (G);
+    if( strncmp (G->next_args, "<gie-strict>", strlen("<gie-strict>")) == 0 )
+    {
+        G->strict_mode = true;
+        return 0;
+    }
+    else
+    {
+        /* We're ready at the start - now step into the block */
+        return nextline (G);
+    }
 }
 
 
@@ -1513,8 +1514,54 @@ whitespace etc. The block is stored in G->args. Returns 1 on success, 0 otherwis
 ****************************************************************************************/
     G->args[0] = 0;
 
-    if (0==skip_to_next_tag (G))
+    // Special parsing in strict_mode:
+    // - All non-comment/decoration lines must start with a valid tag
+    // - Commands split on several lines should be terminated with " \"
+    if( G->strict_mode )
+    {
+        while( nextline(G) )
+        {
+            G->lineno = G->next_lineno;
+            if( G->next_args[0] == 0 || at_decorative_element(G) ) {
+                continue;
+            }
+            G->tag = at_tag (G);
+            if (nullptr==G->tag)
+            {
+                another_failure();
+                fprintf (T.fout, "unsupported command line %d: %s\n", (int)G->lineno, G->next_args);
+                return 0;
+            }
+
+            append_args (G);
+            pj_shrink (G->args);
+            while( G->args[0] != '\0' && G->args[strlen(G->args)-1] == '\\' )
+            {
+                G->args[strlen(G->args)-1] = 0;
+                if( !nextline(G) )
+                {
+                    return 0;
+                }
+                G->lineno = G->next_lineno;
+                append_args (G);
+                pj_shrink (G->args);
+            }
+            if ( 0==strcmp (G->tag, "</gie-strict>")) {
+                G->level++;
+                G->strict_mode = false;
+            }
+            return 1;
+        }
         return 0;
+    }
+
+    if (0==skip_to_next_tag (G))
+    {
+        // If we just entered <gie-strict>, re-enter to read the first command
+        if( G->strict_mode )
+            return get_inp(G);
+        return 0;
+    }
     G->tag = at_tag (G);
 
     if (nullptr==G->tag)

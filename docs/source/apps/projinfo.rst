@@ -16,25 +16,31 @@ Synopsis
 ********
 
     | **projinfo**
-    |    [-o formats] [-k crs|operation|ellipsoid] [--summary] [-q]
+    |    [-o formats] [-k crs|operation|datum|ensemble|ellipsoid] [--summary] [-q]
     |    [[--area name_or_code] | [--bbox west_long,south_lat,east_long,north_lat]]
     |    [--spatial-test contains|intersects]
     |    [--crs-extent-use none|both|intersection|smallest]
-    |    [--grid-check none|discard_missing|sort] [--show-superseded]
+    |    [--grid-check none|discard_missing|sort|known_available]
     |    [--pivot-crs always|if_no_direct_transformation|never|{auth:code[,auth:code]*}]
+    |    [--show-superseded] [--hide-ballpark]
+    |    [--allow-ellipsoidal-height-as-vertical-crs]
     |    [--boundcrs-to-wgs84]
     |    [--main-db-path path] [--aux-db-path path]*
     |    [--identify] [--3d]
     |    [--c-ify] [--single-line]
-    |    {object_definition} | {object_reference} | (-s {srs_def} -t {srs_def})
+    |    --searchpaths | --remote-data | {object_definition} |
+    |    {object_reference} | (-s {srs_def} -t {srs_def})
     |
 
-    where {object_definition} or {srs_def} is
+    where {object_definition} or {srs_def} is one of the possibilities accepted
+    by :c:func:`proj_create`
 
     - a proj-string,
     - a WKT string,
     - an object code (like "EPSG:4326", "urn:ogc:def:crs:EPSG::4326",
       "urn:ogc:def:coordinateOperation:EPSG::1671"),
+    - an Object name. e.g "WGS 84", "WGS 84 / UTM zone 31N". In that case as
+      uniqueness is not guaranteed, heuristics are applied to determine the appropriate best match.
     - a OGC URN combining references for compound coordinate reference systems
       (e.g "urn:ogc:def:crs,crs:EPSG::2393,crs:EPSG::5717" or custom abbreviated
       syntax "EPSG:2393+5717"),
@@ -44,7 +50,8 @@ Synopsis
       (*added in 6.2*)
     - a OGC URN combining references for concatenated operations
       (e.g. "urn:ogc:def:coordinateOperation,coordinateOperation:EPSG::3895,coordinateOperation:EPSG::1618")
-    - a PROJJSON string. The jsonschema is at https://proj.org/schemas/v0.1/projjson.schema.json (*added in 6.2*)
+    - a PROJJSON string. The jsonschema is at https://proj.org/schemas/v0.2/projjson.schema.json (*added in 6.2*)
+    - a compound CRS made from two object names separated with " + ". e.g. "WGS 84 + EGM96 height" (*added in 7.1*)
 
     {object_reference} is a filename preceded by the '@' character.  The
     file referenced by the {object_reference} must contain a valid
@@ -77,7 +84,10 @@ The following control parameters can appear in any order:
 
     .. note:: WKT2_2019 was previously called WKT2_2018.
 
-.. option:: -k crs|operation|ellipsoid
+    .. note:: Before PROJ 6.3.0, WKT1:GDAL was implicitly calling --boundcrs-to-wgs84.
+              This is no longer the case.
+
+.. option:: -k crs|operation|datum|ensemble|ellipsoid
 
     When used to query a single object with a AUTHORITY:CODE, determines the (k)ind of the object
     in case there are CRS, coordinate operations or ellipsoids with the same CODE.
@@ -148,12 +158,13 @@ The following control parameters can appear in any order:
 
     .. note:: only used for coordinate operation computation
 
-.. option:: --grid-check none|discard_missing|sort
+.. option:: --grid-check none|discard_missing|sort|known_available
 
     Specify how the presence or absence of a horizontal or vertical shift grid
     required for a coordinate operation affects the results returned when
     researching coordinate operations between 2 CRS.
-    The default strategy is ``sort``: in that case, all candidate
+    The default strategy is ``sort`` (if :envvar:`PROJ_NETWORK` is not defined).
+    In that case, all candidate
     operations are returned, but the actual availability of the grids is used
     to determine the sorting order. That is, if a coordinate operation involves
     using a grid that is not available in the PROJ resource directories
@@ -163,16 +174,9 @@ The following control parameters can appear in any order:
     this returns the results as if all the grids where available.
     The ``discard_missing`` strategy discards results that involve grids not
     present in the PROJ resource directories.
-
-    .. note:: only used for coordinate operation computation
-
-.. option:: -show-superseded
-
-    When enabled, coordinate operations that are superseded by others will be
-    listed. Note that supersession is not equivalent to deprecation: superseded
-    operations are still considered valid although they have a better equivalent,
-    whereas deprecated operations have been determined to be erroneous and are
-    not considered at all.
+    The ``known_available`` strategy discards results that involve grids not
+    present in the PROJ resource directories and that are not known of the CDN.
+    This is the default strategy is :envvar:`PROJ_NETWORK` is set to ``ON``.
 
     .. note:: only used for coordinate operation computation
 
@@ -189,6 +193,34 @@ The following control parameters can appear in any order:
     one or several CRS by their AUTHORITY:CODE.
 
     .. note:: only used for coordinate operation computation
+
+.. option:: --show-superseded
+
+    When enabled, coordinate operations that are superseded by others will be
+    listed. Note that supersession is not equivalent to deprecation: superseded
+    operations are still considered valid although they have a better equivalent,
+    whereas deprecated operations have been determined to be erroneous and are
+    not considered at all.
+
+    .. note:: only used for coordinate operation computation
+
+.. option:: --hide-ballpark
+
+    .. versionadded:: 7.1
+
+    Hides any coordinate operation that is, or contains, a
+    :term:`Ballpark transformation`
+
+    .. note:: only used for coordinate operation computation
+
+.. option:: --allow-ellipsoidal-height-as-vertical-crs
+
+    .. versionadded:: 8.0
+
+    Allow to export a geographic or projected 3D CRS as a compound CRS whose
+    vertical CRS represents the ellipsoidal height.
+
+    .. note:: only used for CRS, and with WKT1:GDAL output format
 
 .. option:: --boundcrs-to-wgs84
 
@@ -222,7 +254,7 @@ The following control parameters can appear in any order:
 
 .. option:: --3d
 
-    .. versionadded:: 7.0
+    .. versionadded:: 6.3
 
     "Promote" the CRS(s) to their 3D version. In the context of researching
     available coordinate transformations, explicitly specifying this option is
@@ -238,8 +270,23 @@ The following control parameters can appear in any order:
 
 .. option:: --single-line
 
-    Output WKT or PROJJSON strings on a single line, instead of multiple intended lines by
-    default.
+    Output PROJ, WKT or PROJJSON strings on a single line, instead of multiple
+    indented lines by default.
+
+.. option:: --searchpaths
+
+    .. versionadded:: 7.0
+
+    Output the directories into which PROJ resources will be looked for
+    (if not using C API such as :cpp:func:`proj_context_set_search_paths`
+    that will override them.
+
+.. option:: --remote-data
+
+    .. versionadded:: 7.0
+
+    Display information regarding if :ref:`network` is enabled, and the
+    related URL.
 
 Examples
 ********
@@ -393,7 +440,7 @@ Output:
     See also
     ********
 
-    **cs2cs(1)**, **cct(1)**, **geod(1)**, **gie(1)**, **proj(1)**
+    **cs2cs(1)**, **cct(1)**, **geod(1)**, **gie(1)**, **proj(1)**, **projsync(1)**
 
     Bugs
     ****

@@ -36,7 +36,12 @@
 #include <string.h>
 
 #include <cassert>
+#include <iostream>
 #include <string>
+
+#include <proj/io.hpp>
+#include <proj/metadata.hpp>
+#include <proj/util.hpp>
 
 #include <proj/internal/internal.hpp>
 
@@ -70,11 +75,18 @@ static const char *oform =
 static char oform_buffer[16]; /* buffer for oform when using -d */
 static const char *oterr = "*\t*"; /* output line for unprojectable input */
 static const char *usage =
-    "%s\nusage: %s [-dDeEfIlrstvwW [args]] [+opt[=arg] ...]\n"
-    "                   [+to +opt[=arg] ...] [file ...]\n";
+    "%s\nusage: %s [-dDeEfIlrstvwW [args]]\n"
+    "              [[--area name_or_code] | [--bbox west_long,south_lat,east_long,north_lat]]\n"
+    "              [--authority {name}]\n"
+    "              [+opt[=arg] ...] [+to +opt[=arg] ...] [file ...]\n";
 
 static double (*informat)(const char *,
                           char **); /* input data deformatter function */
+
+using namespace NS_PROJ::io;
+using namespace NS_PROJ::metadata;
+using namespace NS_PROJ::util;
+using namespace NS_PROJ::internal;
 
 /************************************************************************/
 /*                              process()                               */
@@ -117,10 +129,10 @@ static void process(FILE *fid)
 
         /* To avoid breaking existing tests, we read what is a possible t    */
         /* component of the input and rewind the s-pointer so that the final */
-        /* output has consistant behaviour, with or without t values.        */
+        /* output has consistent behavior, with or without t values.        */
         /* This is a bit of a hack, in most cases 4D coordinates will be     */
         /* written to STDOUT (except when using -E) but the output format    */
-        /* speficied with -f is not respected for the t component, rather it */
+        /* specified with -f is not respected for the t component, rather it */
         /* is forward verbatim from the input.                               */
         char *before_time = s;
         double t = strtod(s, &s);
@@ -217,6 +229,7 @@ static void process(FILE *fid)
             printf("%s", s);
         else
             printf("\n");
+        fflush(stdout);
     }
 }
 
@@ -349,27 +362,66 @@ int main(int argc, char **argv) {
         exit(0);
     }
 
-    // First pass to check if we have "cs2cs [-bla]* <SRC> <DEST>" syntax
-    int countNonOptionArg = 0;
+    // First pass to check if we have "cs2cs [-bla]* <SRC> <DEST> [<filename>]" syntax
+    bool isProj4StyleSyntax = false;
     for (int i = 1; i < argc; i++) {
-        if (argv[i][0] == '-') {
-            if (argv[i][1] == 'f' || argv[i][1] == 'e' || argv[i][1] == 'd' ||
-                argv[i][1] == 'D' ) {
-                i++;
-            }
-        } else {
-            if (strcmp(argv[i], "+to") == 0) {
-                countNonOptionArg = -1;
-                break;
-            }
-            countNonOptionArg++;
+        if (argv[i][0] == '+') {
+            isProj4StyleSyntax = true;
+            break;
         }
     }
-    const bool isSrcDestSyntax = (countNonOptionArg == 2);
+
+    ExtentPtr bboxFilter;
+    std::string area;
+    const char* authority = nullptr;
 
     /* process run line arguments */
     while (--argc > 0) { /* collect run line arguments */
-        if (**++argv == '-') {
+        ++argv;
+        if (strcmp(*argv, "--area") == 0 ) {
+            ++argv;
+            --argc;
+            if( argc == 0 ) {
+                emess(1, "missing argument for --area");
+                std::exit(1);
+            }
+            area = *argv;
+        }
+        else if (strcmp(*argv, "--bbox") == 0) {
+            ++argv;
+            --argc;
+            if( argc == 0 ) {
+                emess(1, "missing argument for --bbox");
+                std::exit(1);
+            }
+            auto bboxStr(*argv);
+            auto bbox(split(bboxStr, ','));
+            if (bbox.size() != 4) {
+                std::cerr << "Incorrect number of values for option --bbox: "
+                          << bboxStr << std::endl;
+                std::exit(1);
+            }
+            try {
+                bboxFilter = Extent::createFromBBOX(
+                                 c_locale_stod(bbox[0]), c_locale_stod(bbox[1]),
+                                 c_locale_stod(bbox[2]), c_locale_stod(bbox[3]))
+                                 .as_nullable();
+            } catch (const std::exception &e) {
+                std::cerr << "Invalid value for option --bbox: " << bboxStr
+                          << ", " << e.what() << std::endl;
+                std::exit(1);
+            }
+        }
+        else if (strcmp(*argv, "--authority") == 0 ) {
+            ++argv;
+            --argc;
+            if( argc == 0 ) {
+                emess(1, "missing argument for --authority");
+                std::exit(1);
+            }
+            authority = *argv;
+        }
+        else if (**argv == '-') {
             for (arg = *argv;;) {
                 switch (*++arg) {
                 case '\0': /* position of "stdin" */
@@ -425,24 +477,18 @@ int main(int argc, char **argv) {
                             (void)printf("%9s %-16s %-16s %s\n", le->id,
                                          le->major, le->ell, le->name);
                     } else if (arg[1] == 'u') { /* list units */
-                        const struct PJ_UNITS *lu;
-
-                        for (lu = proj_list_units(); lu->id; ++lu)
-                            (void)printf("%12s %-20s %s\n", lu->id,
-                                         lu->to_meter, lu->name);
-                    } else if (arg[1] == 'd') { /* list datums */
-                        const struct PJ_DATUMS *ld;
-
-                        printf("__datum_id__ __ellipse___ "
-                               "__definition/"
-                               "comments______________________________\n");
-                        for (ld = pj_get_datums_ref(); ld->id; ++ld) {
-                            printf("%12s %-12s %-30s\n", ld->id, ld->ellipse_id,
-                                   ld->defn);
-                            if (ld->comments != nullptr &&
-                                strlen(ld->comments) > 0)
-                                printf("%25s %s\n", " ", ld->comments);
+                        auto units = proj_get_units_from_database(nullptr, nullptr, "linear", false, nullptr);
+                        for( int i = 0; units && units[i]; i++ )
+                        {
+                            if( units[i]->proj_short_name )
+                            {
+                                (void)printf("%12s %-20.15g %s\n",
+                                                units[i]->proj_short_name,
+                                                units[i]->conv_factor,
+                                                units[i]->name);
+                            }
                         }
+                        proj_unit_list_destroy(units);
                     } else if (arg[1] == 'm') { /* list prime meridians */
                         const struct PJ_PRIME_MERIDIANS *lpm;
 
@@ -482,10 +528,23 @@ int main(int argc, char **argv) {
                     reverseout = 1;
                     continue;
                 case 'D': /* set debug level */
+                {
                     if (--argc <= 0)
                         goto noargument;
-                    pj_ctx_set_debug(pj_get_default_ctx(), atoi(*++argv));
+                    int log_level = atoi(*++argv);
+                    if (log_level <= 0) {
+                        proj_log_level(pj_get_default_ctx(), PJ_LOG_NONE);
+                    } else if (log_level == 1) {
+                        proj_log_level(pj_get_default_ctx(), PJ_LOG_ERROR);
+                    } else if (log_level == 2) {
+                        proj_log_level(pj_get_default_ctx(), PJ_LOG_DEBUG);
+                    } else if (log_level == 3) {
+                        proj_log_level(pj_get_default_ctx(), PJ_LOG_TRACE);
+                    } else {
+                        proj_log_level(pj_get_default_ctx(), PJ_LOG_TELL);
+                    }
                     continue;
+                }
                 case 'd':
                     if (--argc <= 0)
                         goto noargument;
@@ -498,11 +557,15 @@ int main(int argc, char **argv) {
                 }
                 break;
             }
-        } else if (isSrcDestSyntax) {
+        } else if (!isProj4StyleSyntax) {
             if (fromStr.empty())
                 fromStr = *argv;
-            else
+            else if( toStr.empty() )
                 toStr = *argv;
+            else {
+                 /* assumed to be input file name(s) */
+                eargv[eargc++] = *argv;
+            }
         } else if (strcmp(*argv, "+to") == 0) {
             have_to_flag = 1;
 
@@ -530,6 +593,102 @@ int main(int argc, char **argv) {
         if( !validate_form_string_for_numbers(oform) ) {
             emess(3, "invalid format string");
             exit(0);
+        }
+    }
+
+    if (bboxFilter && !area.empty()) {
+        std::cerr << "ERROR: --bbox and --area are exclusive" << std::endl;
+        std::exit(1);
+    }
+
+    PJ_AREA* pj_area = nullptr;
+    if (!area.empty()) {
+
+        DatabaseContextPtr dbContext;
+        try {
+            dbContext =
+                DatabaseContext::create().as_nullable();
+        } catch (const std::exception &e) {
+            std::cerr << "ERROR: Cannot create database connection: "
+                    << e.what() << std::endl;
+            std::exit(1);
+        }
+
+        // Process area of use
+        try {
+            if (area.find(' ') == std::string::npos &&
+                area.find(':') != std::string::npos) {
+                auto tokens = split(area, ':');
+                if (tokens.size() == 2) {
+                    const std::string &areaAuth = tokens[0];
+                    const std::string &areaCode = tokens[1];
+                    bboxFilter = AuthorityFactory::create(
+                                        NN_NO_CHECK(dbContext), areaAuth)
+                                        ->createExtent(areaCode)
+                                        .as_nullable();
+                }
+            }
+            if (!bboxFilter) {
+                auto authFactory = AuthorityFactory::create(
+                    NN_NO_CHECK(dbContext), std::string());
+                auto res = authFactory->listAreaOfUseFromName(area, false);
+                if (res.size() == 1) {
+                    bboxFilter =
+                        AuthorityFactory::create(NN_NO_CHECK(dbContext),
+                                                    res.front().first)
+                            ->createExtent(res.front().second)
+                            .as_nullable();
+                } else {
+                    res = authFactory->listAreaOfUseFromName(area, true);
+                    if (res.size() == 1) {
+                        bboxFilter =
+                            AuthorityFactory::create(NN_NO_CHECK(dbContext),
+                                                        res.front().first)
+                                ->createExtent(res.front().second)
+                                .as_nullable();
+                    } else if (res.empty()) {
+                        std::cerr << "No area of use matching provided name"
+                                    << std::endl;
+                        std::exit(1);
+                    } else {
+                        std::cerr << "Several candidates area of use "
+                                        "matching provided name :"
+                                    << std::endl;
+                        for (const auto &candidate : res) {
+                            auto obj =
+                                AuthorityFactory::create(
+                                    NN_NO_CHECK(dbContext), candidate.first)
+                                    ->createExtent(candidate.second);
+                            std::cerr << "  " << candidate.first << ":"
+                                        << candidate.second << " : "
+                                        << *obj->description() << std::endl;
+                        }
+                        std::exit(1);
+                    }
+                }
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "Area of use retrieval failed: " << e.what()
+                        << std::endl;
+            std::exit(1);
+        }
+    }
+
+    if (bboxFilter) {
+        auto geogElts = bboxFilter->geographicElements();
+        if (geogElts.size() == 1)
+        {
+            auto bbox = std::dynamic_pointer_cast<GeographicBoundingBox>(
+                geogElts[0].as_nullable());
+            if (bbox)
+            {
+                pj_area = proj_area_create();
+                proj_area_set_bbox(pj_area,
+                                   bbox->westBoundLongitude(),
+                                   bbox->southBoundLatitude(),
+                                   bbox->eastBoundLongitude(),
+                                   bbox->northBoundLatitude());
+            }
         }
     }
 
@@ -613,15 +772,23 @@ int main(int argc, char **argv) {
         }
     }
 
+    std::string authorityOption; /* keep this variable in this outer scope ! */
+    const char* options[2] = { nullptr, nullptr };
+    if( authority ) {
+        authorityOption = "AUTHORITY=";
+        authorityOption += authority;
+        options[0] = authorityOption.data();
+    }
     transformation = proj_create_crs_to_crs_from_pj(nullptr, src, dst,
-                                                    nullptr, nullptr);
+                                                    pj_area, options);
 
     proj_destroy(src);
     proj_destroy(dst);
+    proj_area_destroy(pj_area);
 
     if (!transformation) {
         emess(3, "cannot initialize transformation\ncause: %s",
-              pj_strerrno(pj_errno));
+              proj_errno_string(proj_context_errno(nullptr)));
     }
 
     if (use_env_locale) {

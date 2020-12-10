@@ -71,7 +71,7 @@ static PJ_LP somerc_e_inverse (PJ_XY xy, PJ *P) {          /* Ellipsoidal, inver
 
 PJ *PROJECTION(somerc) {
     double cp, phip0, sp;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
@@ -82,7 +82,9 @@ PJ *PROJECTION(somerc) {
     cp *= cp;
     Q->c = sqrt (1 + P->es * cp * cp * P->rone_es);
     sp = sin (P->phi0);
-    Q->cosp0 = cos( phip0 = aasin (P->ctx, Q->sinp0 = sp / Q->c) );
+    Q->sinp0 = sp / Q->c;
+    phip0 = aasin (P->ctx, Q->sinp0);
+    Q->cosp0 = cos(phip0);
     sp *= P->e;
     Q->K = log (tan (M_FORTPI + 0.5 * phip0)) - Q->c * (
         log (tan (M_FORTPI + 0.5 * P->phi0)) - Q->hlf_e *

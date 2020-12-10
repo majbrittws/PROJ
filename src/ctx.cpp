@@ -1,6 +1,6 @@
 /******************************************************************************
  * Project:  PROJ.4
- * Purpose:  Implementation of the projCtx thread context object.
+ * Purpose:  Implementation of the PJ_CONTEXT thread context object.
  * Author:   Frank Warmerdam, warmerdam@pobox.com
  *
  ******************************************************************************
@@ -24,6 +24,9 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *****************************************************************************/
+#ifndef FROM_PROJ_CPP
+#define FROM_PROJ_CPP
+#endif
 
 #include <errno.h>
 #include <stdlib.h>
@@ -33,12 +36,14 @@
 
 #include "proj_experimental.h"
 #include "proj_internal.h"
+#include "filemanager.hpp"
+#include "proj/internal/io_internal.hpp"
 
 /************************************************************************/
 /*                             pj_get_ctx()                             */
 /************************************************************************/
 
-projCtx pj_get_ctx( projPJ pj )
+PJ_CONTEXT* pj_get_ctx( PJ *pj )
 
 {
     if (nullptr==pj)
@@ -46,20 +51,6 @@ projCtx pj_get_ctx( projPJ pj )
     if (nullptr==pj->ctx)
         return pj_get_default_ctx ();
     return pj->ctx;
-}
-
-/************************************************************************/
-/*                             pj_set_ctx()                             */
-/*                                                                      */
-/*      Note we do not deallocate the old context!                      */
-/************************************************************************/
-
-void pj_set_ctx( projPJ pj, projCtx ctx )
-
-{
-    if (pj==nullptr)
-        return;
-    pj->ctx = ctx;
 }
 
 /************************************************************************/
@@ -73,21 +64,32 @@ void pj_set_ctx( projPJ pj, projCtx ctx )
  * the user may want to assign another thread-specific context to the
  * object.
  */
-void proj_assign_context( PJ* pj, PJ_CONTEXT* ctx )
+void proj_assign_context( PJ* pj, PJ_CONTEXT *ctx )
 {
-    pj_set_ctx( pj, ctx );
+    if (pj==nullptr)
+        return;
+    pj->ctx = ctx;
+    if( pj->reassign_context )
+    {
+        pj->reassign_context(pj, ctx);
+    }
+    for( const auto &alt: pj->alternativeCoordinateOperations )
+    {
+        proj_assign_context(alt.pj, ctx);
+    }
+
 }
 
 /************************************************************************/
 /*                          createDefault()                             */
 /************************************************************************/
 
-projCtx_t projCtx_t::createDefault()
+pj_ctx pj_ctx::createDefault()
 {
-    projCtx_t ctx;
+    pj_ctx ctx;
     ctx.debug_level = PJ_LOG_NONE;
     ctx.logger = pj_stderr_logger;
-    ctx.fileapi = pj_get_default_fileapi();
+    NS_PROJ::FileManager::fillDefaultNetworkInterface(&ctx);
 
     if( getenv("PROJ_DEBUG") != nullptr )
     {
@@ -99,11 +101,34 @@ projCtx_t projCtx_t::createDefault()
     return ctx;
 }
 
+/**************************************************************************/
+/*                           get_cpp_context()                            */
+/**************************************************************************/
+
+projCppContext* pj_ctx::get_cpp_context()
+{
+    if (cpp_context == nullptr) {
+        cpp_context = new projCppContext(this);
+    }
+    return cpp_context;
+}
+
+/**************************************************************************/
+/*                           safeAutoCloseDbIfNeeded()                      */
+/**************************************************************************/
+
+void pj_ctx::safeAutoCloseDbIfNeeded()
+{
+    if (cpp_context) {
+        cpp_context->autoCloseDbIfNeeded();
+    }
+}
+
 /************************************************************************/
 /*                           set_search_paths()                         */
 /************************************************************************/
 
-void projCtx_t::set_search_paths(const std::vector<std::string>& search_paths_in )
+void pj_ctx::set_search_paths(const std::vector<std::string>& search_paths_in )
 {
     search_paths = search_paths_in;
     delete[] c_compat_paths;
@@ -116,162 +141,76 @@ void projCtx_t::set_search_paths(const std::vector<std::string>& search_paths_in
     }
 }
 
+/**************************************************************************/
+/*                           set_ca_bundle_path()                         */
+/**************************************************************************/
+
+void pj_ctx::set_ca_bundle_path(const std::string& ca_bundle_path_in)
+{
+    ca_bundle_path = ca_bundle_path_in;
+}
+
 /************************************************************************/
-/*                  projCtx_t(const projCtx_t& other)                   */
+/*                  pj_ctx(const pj_ctx& other)                   */
 /************************************************************************/
 
-projCtx_t::projCtx_t(const projCtx_t& other)
+pj_ctx::pj_ctx(const pj_ctx& other) :
+    debug_level(other.debug_level),
+    logger(other.logger),
+    logger_app_data(other.logger_app_data),
+    cpp_context(other.cpp_context ? other.cpp_context->clone(this) : nullptr),
+    use_proj4_init_rules(other.use_proj4_init_rules),
+    epsg_file_exists(other.epsg_file_exists),
+    ca_bundle_path(other.ca_bundle_path),
+    env_var_proj_lib(other.env_var_proj_lib),
+    file_finder(other.file_finder),
+    file_finder_user_data(other.file_finder_user_data),
+    custom_sqlite3_vfs_name(other.custom_sqlite3_vfs_name),
+    user_writable_directory(other.user_writable_directory),
+    // BEGIN ini file settings
+    iniFileLoaded(other.iniFileLoaded),
+    endpoint(other.endpoint),
+    networking(other.networking),
+    gridChunkCache(other.gridChunkCache),
+    defaultTmercAlgo(other.defaultTmercAlgo)
+    // END ini file settings
 {
-    debug_level = other.debug_level;
-    logger = other.logger;
-    logger_app_data = other.logger_app_data;
-    fileapi = other.fileapi;
-    epsg_file_exists = other.epsg_file_exists;
     set_search_paths(other.search_paths);
-    file_finder = other.file_finder;
-    file_finder_legacy = other.file_finder_legacy;
-    file_finder_user_data = other.file_finder_user_data;
 }
 
 /************************************************************************/
 /*                         pj_get_default_ctx()                         */
 /************************************************************************/
 
-projCtx pj_get_default_ctx()
+PJ_CONTEXT* pj_get_default_ctx()
 
 {
     // C++11 rules guarantee a thread-safe instantiation.
-    static projCtx_t default_context(projCtx_t::createDefault());
+    static pj_ctx default_context(pj_ctx::createDefault());
     return &default_context;
 }
 
 /************************************************************************/
-/*                            ~projCtx_t()                              */
+/*                            ~pj_ctx()                              */
 /************************************************************************/
 
-projCtx_t::~projCtx_t()
+pj_ctx::~pj_ctx()
 {
     delete[] c_compat_paths;
     proj_context_delete_cpp_context(cpp_context);
 }
 
 /************************************************************************/
-/*                            pj_ctx_alloc()                            */
+/*                            proj_context_clone()                      */
+/*           Create a new context based on a custom context             */
 /************************************************************************/
 
-projCtx pj_ctx_alloc()
-
-{
-    return new (std::nothrow) projCtx_t(*pj_get_default_ctx());
-}
-
-/************************************************************************/
-/*                            pj_ctx_free()                             */
-/************************************************************************/
-
-void pj_ctx_free( projCtx ctx )
-
-{
-    delete ctx;
-}
-
-/************************************************************************/
-/*                          pj_ctx_get_errno()                          */
-/************************************************************************/
-
-int pj_ctx_get_errno( projCtx ctx )
-
+PJ_CONTEXT* proj_context_clone (PJ_CONTEXT *ctx)
 {
     if (nullptr==ctx)
-        return pj_get_default_ctx ()->last_errno;
-    return ctx->last_errno;
+        return proj_context_create();
+
+    return new (std::nothrow) pj_ctx(*ctx);
 }
 
-/************************************************************************/
-/*                          pj_ctx_set_errno()                          */
-/*                                                                      */
-/*                      Also sets the global errno                      */
-/************************************************************************/
-
-void pj_ctx_set_errno( projCtx ctx, int new_errno )
-
-{
-    ctx->last_errno = new_errno;
-    if( new_errno == 0 )
-        return;
-    errno = new_errno;
-    pj_errno = new_errno;
-}
-
-/************************************************************************/
-/*                          pj_ctx_set_debug()                          */
-/************************************************************************/
-
-void pj_ctx_set_debug( projCtx ctx, int new_debug )
-
-{
-    if (nullptr==ctx)
-        return;
-    ctx->debug_level = new_debug;
-}
-
-/************************************************************************/
-/*                         pj_ctx_set_logger()                          */
-/************************************************************************/
-
-void pj_ctx_set_logger( projCtx ctx, void (*new_logger)(void*,int,const char*) )
-
-{
-    if (nullptr==ctx)
-        return;
-    ctx->logger = new_logger;
-}
-
-/************************************************************************/
-/*                        pj_ctx_set_app_data()                         */
-/************************************************************************/
-
-void pj_ctx_set_app_data( projCtx ctx, void *new_app_data )
-
-{
-    if (nullptr==ctx)
-        return;
-    ctx->logger_app_data = new_app_data;
-}
-
-/************************************************************************/
-/*                        pj_ctx_get_app_data()                         */
-/************************************************************************/
-
-void *pj_ctx_get_app_data( projCtx ctx )
-
-{
-    if (nullptr==ctx)
-        return nullptr;
-    return ctx->logger_app_data;
-}
-
-/************************************************************************/
-/*                         pj_ctx_set_fileapi()                         */
-/************************************************************************/
-
-void pj_ctx_set_fileapi( projCtx ctx, projFileAPI *fileapi )
-
-{
-    if (nullptr==ctx)
-        return;
-    ctx->fileapi = fileapi;
-}
-
-/************************************************************************/
-/*                         pj_ctx_get_fileapi()                         */
-/************************************************************************/
-
-projFileAPI *pj_ctx_get_fileapi( projCtx ctx )
-
-{
-    if (nullptr==ctx)
-        return nullptr;
-    return ctx->fileapi;
-}
 

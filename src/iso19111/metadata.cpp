@@ -38,6 +38,8 @@
 #include "proj/internal/internal.hpp"
 #include "proj/internal/io_internal.hpp"
 
+#include "proj_json_streaming_writer.hpp"
+
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -237,7 +239,8 @@ GeographicBoundingBoxNNPtr GeographicBoundingBox::create(double west,
 
 //! @cond Doxygen_Suppress
 bool GeographicBoundingBox::_isEquivalentTo(
-    const util::IComparable *other, util::IComparable::Criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion,
+    const io::DatabaseContextPtr &) const {
     auto otherExtent = dynamic_cast<const GeographicBoundingBox *>(other);
     if (!otherExtent)
         return false;
@@ -502,7 +505,8 @@ VerticalExtent::create(double minimumIn, double maximumIn,
 
 //! @cond Doxygen_Suppress
 bool VerticalExtent::_isEquivalentTo(const util::IComparable *other,
-                                     util::IComparable::Criterion) const {
+                                     util::IComparable::Criterion,
+                                     const io::DatabaseContextPtr &) const {
     auto otherExtent = dynamic_cast<const VerticalExtent *>(other);
     if (!otherExtent)
         return false;
@@ -587,7 +591,8 @@ TemporalExtentNNPtr TemporalExtent::create(const std::string &start,
 
 //! @cond Doxygen_Suppress
 bool TemporalExtent::_isEquivalentTo(const util::IComparable *other,
-                                     util::IComparable::Criterion) const {
+                                     util::IComparable::Criterion,
+                                     const io::DatabaseContextPtr &) const {
     auto otherExtent = dynamic_cast<const TemporalExtent *>(other);
     if (!otherExtent)
         return false;
@@ -734,7 +739,8 @@ Extent::createFromBBOX(double west, double south, double east, double north,
 
 //! @cond Doxygen_Suppress
 bool Extent::_isEquivalentTo(const util::IComparable *other,
-                             util::IComparable::Criterion criterion) const {
+                             util::IComparable::Criterion criterion,
+                             const io::DatabaseContextPtr &dbContext) const {
     auto otherExtent = dynamic_cast<const Extent *>(other);
     bool ret =
         (otherExtent &&
@@ -749,15 +755,18 @@ bool Extent::_isEquivalentTo(const util::IComparable *other,
     if (ret) {
         for (size_t i = 0; ret && i < d->geographicElements_.size(); ++i) {
             ret = d->geographicElements_[i]->_isEquivalentTo(
-                otherExtent->d->geographicElements_[i].get(), criterion);
+                otherExtent->d->geographicElements_[i].get(), criterion,
+                dbContext);
         }
         for (size_t i = 0; ret && i < d->verticalElements_.size(); ++i) {
             ret = d->verticalElements_[i]->_isEquivalentTo(
-                otherExtent->d->verticalElements_[i].get(), criterion);
+                otherExtent->d->verticalElements_[i].get(), criterion,
+                dbContext);
         }
         for (size_t i = 0; ret && i < d->temporalElements_.size(); ++i) {
             ret = d->temporalElements_[i]->_isEquivalentTo(
-                otherExtent->d->temporalElements_[i].get(), criterion);
+                otherExtent->d->temporalElements_[i].get(), criterion,
+                dbContext);
         }
     }
     return ret;
@@ -768,7 +777,7 @@ bool Extent::_isEquivalentTo(const util::IComparable *other,
 
 /** \brief Returns whether this extent contains the other one.
  *
- * Behaviour only well specified if each sub-extent category as at most
+ * Behavior only well specified if each sub-extent category as at most
  * one element.
  */
 bool Extent::contains(const ExtentNNPtr &other) const {
@@ -793,7 +802,7 @@ bool Extent::contains(const ExtentNNPtr &other) const {
 
 /** \brief Returns whether this extent intersects the other one.
  *
- * Behaviour only well specified if each sub-extent category as at most
+ * Behavior only well specified if each sub-extent category as at most
  * one element.
  */
 bool Extent::intersects(const ExtentNNPtr &other) const {
@@ -820,7 +829,7 @@ bool Extent::intersects(const ExtentNNPtr &other) const {
 
 /** \brief Returns the intersection of this extent with another one.
  *
- * Behaviour only well specified if there is one single GeographicExtent
+ * Behavior only well specified if there is one single GeographicExtent
  * in each object.
  * Returns nullptr otherwise.
  */
@@ -1095,15 +1104,15 @@ void Identifier::_exportToJSON(JSONFormatter *formatter) const {
     const std::string &l_code = code();
     const std::string &l_codeSpace = *codeSpace();
     if (!l_codeSpace.empty() && !l_code.empty()) {
-        auto &writer = formatter->writer();
+        auto writer = formatter->writer();
         auto objContext(formatter->MakeObjectContext(nullptr, false));
-        writer.AddObjKey("authority");
-        writer.Add(l_codeSpace);
-        writer.AddObjKey("code");
+        writer->AddObjKey("authority");
+        writer->Add(l_codeSpace);
+        writer->AddObjKey("code");
         try {
-            writer.Add(std::stoi(l_code));
+            writer->Add(std::stoi(l_code));
         } catch (const std::exception &) {
-            writer.Add(l_code);
+            writer->Add(l_code);
         }
     }
 }

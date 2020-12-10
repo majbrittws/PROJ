@@ -61,7 +61,8 @@ static PJ_LP o_inverse(PJ_XY xy, PJ *P) {             /* spheroid */
 
     PJ_LP lp = Q->link->inv(xy, Q->link);
     if (lp.lam != HUGE_VAL) {
-        coslam = cos(lp.lam -= Q->lamp);
+        lp.lam -= Q->lamp;
+        coslam = cos(lp.lam);
         sinphi = sin(lp.phi);
         cosphi = cos(lp.phi);
         /* Formula (5-9) */
@@ -140,14 +141,15 @@ static ARGS ob_tran_target_params (paralist *params) {
     if (argc < 2)
         return args;
 
-    /* all args except the proj_ob_tran */
-    args.argv = static_cast<char**>(pj_calloc (argc - 1, sizeof (char *)));
+    /* all args except the proj=ob_tran */
+    args.argv = static_cast<char**>(calloc (argc - 1, sizeof (char *)));
     if (nullptr==args.argv)
         return args;
 
-    /* Copy all args *except* the proj=ob_tran arg to the argv array */
+    /* Copy all args *except* the proj=ob_tran or inv arg to the argv array */
     for (i = 0;  params != nullptr;  params = params->next) {
-        if (0==strcmp (params->param, "proj=ob_tran"))
+        if (0==strcmp (params->param, "proj=ob_tran") ||
+            0==strcmp (params->param, "inv") )
             continue;
         args.argv[i++] = params->param;
     }
@@ -159,7 +161,7 @@ static ARGS ob_tran_target_params (paralist *params) {
             continue;
         args.argv[i] += 2;
         if (strcmp(args.argv[i], "proj=ob_tran") == 0 ) {
-            pj_dealloc (args.argv);
+            free (args.argv);
             args.argc = 0;
             args.argv = nullptr;
         }
@@ -176,7 +178,7 @@ PJ *PROJECTION(ob_tran) {
     ARGS args;
     PJ *R; /* projection to rotate */
 
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
         return destructor(P, ENOMEM);
 
@@ -193,8 +195,8 @@ PJ *PROJECTION(ob_tran) {
     if (args.argv == nullptr ) {
         return destructor(P, PJD_ERR_FAILED_TO_FIND_PROJ);
     }
-    R = pj_init_ctx (pj_get_ctx(P), args.argc, args.argv);
-    pj_dealloc (args.argv);
+    R = proj_create_argv (P->ctx, args.argc, args.argv);
+    free (args.argv);
 
     if (nullptr==R)
         return destructor (P, PJD_ERR_UNKNOWN_PROJECTION_ID);
@@ -222,7 +224,8 @@ PJ *PROJECTION(ob_tran) {
         phi1 = pj_param(P->ctx, P->params, "ro_lat_1").f;
         lam2 = pj_param(P->ctx, P->params, "ro_lon_2").f;
         phi2 = pj_param(P->ctx, P->params, "ro_lat_2").f;
-        if (fabs(phi1 - phi2) <= TOL || (con = fabs(phi1)) <= TOL ||
+        con = fabs(phi1);
+        if (fabs(phi1 - phi2) <= TOL || con <= TOL ||
             fabs(con - M_HALFPI) <= TOL || fabs(fabs(phi2) - M_HALFPI) <= TOL)
                 return destructor(P, PJD_ERR_LAT_1_OR_2_ZERO_OR_90);
 

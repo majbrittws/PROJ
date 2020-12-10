@@ -119,8 +119,8 @@
 
 #include <stddef.h>  /* For size_t */
 
-#ifdef PROJ_API_H
-#error proj.h must be included before proj_api.h
+#ifdef ACCEPT_USE_OF_DEPRECATED_PROJ_API_H
+  #error "The proj_api.h header has been removed from PROJ with version 8.0.0"
 #endif
 
 #ifdef PROJ_RENAME_SYMBOLS
@@ -151,8 +151,26 @@ extern "C" {
 #endif
 #endif
 
+#ifdef PROJ_SUPPRESS_DEPRECATION_MESSAGE
+  #define PROJ_DEPRECATED(decl, msg)            decl
+#elif defined(__has_extension)
+  #if __has_extension(attribute_deprecated_with_message)
+    #define PROJ_DEPRECATED(decl, msg)          decl __attribute__ ((deprecated(msg)))
+  #elif defined(__GNUC__)
+    #define PROJ_DEPRECATED(decl, msg)          decl __attribute__ ((deprecated))
+  #else
+    #define PROJ_DEPRECATED(decl, msg)          decl
+  #endif
+#elif defined(__GNUC__)
+  #define PROJ_DEPRECATED(decl, msg)            decl __attribute__ ((deprecated))
+#elif defined(_MSVC_VER)
+  #define PROJ_DEPRECATED(decl, msg)            __declspec(deprecated(msg)) decl
+#else
+  #define PROJ_DEPRECATED(decl, msg)            decl
+#endif
+
 /* The version numbers should be updated with every release! **/
-#define PROJ_VERSION_MAJOR 7
+#define PROJ_VERSION_MAJOR 8
 #define PROJ_VERSION_MINOR 0
 #define PROJ_VERSION_PATCH 0
 
@@ -322,9 +340,9 @@ typedef enum PJ_LOG_LEVEL {
 typedef void (*PJ_LOG_FUNCTION)(void *, int, const char *);
 
 
-/* The context type - properly namespaced synonym for projCtx */
-struct projCtx_t;
-typedef struct projCtx_t PJ_CONTEXT;
+/* The context type - properly namespaced synonym for pj_ctx */
+struct pj_ctx;
+typedef struct pj_ctx PJ_CONTEXT;
 
 /* A P I */
 
@@ -343,15 +361,182 @@ typedef struct projCtx_t PJ_CONTEXT;
 #endif
 PJ_CONTEXT PROJ_DLL *proj_context_create (void);
 PJ_CONTEXT PROJ_DLL *proj_context_destroy (PJ_CONTEXT *ctx);
+PJ_CONTEXT PROJ_DLL *proj_context_clone (PJ_CONTEXT *ctx);
 
 /** Callback to resolve a filename to a full path */
 typedef const char* (*proj_file_finder) (PJ_CONTEXT *ctx, const char*, void* user_data);
 
 void PROJ_DLL proj_context_set_file_finder(PJ_CONTEXT *ctx, proj_file_finder finder, void* user_data);
 void PROJ_DLL proj_context_set_search_paths(PJ_CONTEXT *ctx, int count_paths, const char* const* paths);
-
+void PROJ_DLL proj_context_set_ca_bundle_path(PJ_CONTEXT *ctx, const char *path);
 void PROJ_DLL proj_context_use_proj4_init_rules(PJ_CONTEXT *ctx, int enable);
 int PROJ_DLL proj_context_get_use_proj4_init_rules(PJ_CONTEXT *ctx, int from_legacy_code_path);
+
+/*! @endcond */
+
+/** Opaque structure for PROJ for a file handle. Implementations might cast it to their
+ * structure/class of choice. */
+typedef struct PROJ_FILE_HANDLE PROJ_FILE_HANDLE;
+
+/** Open access / mode */
+typedef enum PROJ_OPEN_ACCESS
+{
+    /** Read-only access. Equivalent to "rb" */
+    PROJ_OPEN_ACCESS_READ_ONLY,
+
+    /** Read-update access. File should be created if not existing. Equivalent to "r+b" */
+    PROJ_OPEN_ACCESS_READ_UPDATE,
+
+    /** Create access. File should be truncated to 0-byte if already existing. Equivalent to "w+b" */
+    PROJ_OPEN_ACCESS_CREATE
+} PROJ_OPEN_ACCESS;
+
+/** File API callbacks */
+typedef struct PROJ_FILE_API
+{
+    /** Version of this structure. Should be set to 1 currently. */
+    int version;
+
+    /** Open file. Return NULL if error */
+    PROJ_FILE_HANDLE* (*open_cbk)(PJ_CONTEXT *ctx, const char *filename, PROJ_OPEN_ACCESS access, void* user_data);
+
+    /** Read sizeBytes into buffer from current position and return number of bytes read */
+    size_t            (*read_cbk)(PJ_CONTEXT *ctx, PROJ_FILE_HANDLE*, void* buffer, size_t sizeBytes, void* user_data);
+
+    /** Write sizeBytes into buffer from current position and return number of bytes written */
+    size_t            (*write_cbk)(PJ_CONTEXT *ctx, PROJ_FILE_HANDLE*, const void* buffer, size_t sizeBytes, void* user_data);
+
+    /** Seek to offset using whence=SEEK_SET/SEEK_CUR/SEEK_END. Return TRUE in case of success */
+    int               (*seek_cbk)(PJ_CONTEXT *ctx, PROJ_FILE_HANDLE*, long long offset, int whence, void* user_data);
+
+    /** Return current file position */
+    unsigned long long (*tell_cbk)(PJ_CONTEXT *ctx, PROJ_FILE_HANDLE*, void* user_data);
+
+    /** Close file */
+    void              (*close_cbk)(PJ_CONTEXT *ctx, PROJ_FILE_HANDLE*, void* user_data);
+
+    /** Return TRUE if a file exists */
+    int (*exists_cbk)(PJ_CONTEXT *ctx, const char *filename, void* user_data);
+
+    /** Return TRUE if directory exists or could be created  */
+    int (*mkdir_cbk)(PJ_CONTEXT *ctx, const char *filename, void* user_data);
+
+    /** Return TRUE if file could be removed  */
+    int (*unlink_cbk)(PJ_CONTEXT *ctx, const char *filename, void* user_data);
+
+    /** Return TRUE if file could be renamed  */
+    int (*rename_cbk)(PJ_CONTEXT *ctx, const char *oldPath, const char *newPath, void* user_data);
+} PROJ_FILE_API;
+
+int PROJ_DLL proj_context_set_fileapi(
+    PJ_CONTEXT* ctx, const PROJ_FILE_API* fileapi, void* user_data);
+
+void PROJ_DLL proj_context_set_sqlite3_vfs_name(PJ_CONTEXT* ctx, const char* name);
+
+/** Opaque structure for PROJ for a network handle. Implementations might cast it to their
+ * structure/class of choice. */
+typedef struct PROJ_NETWORK_HANDLE PROJ_NETWORK_HANDLE;
+
+/** Network access: open callback
+ * 
+ * Should try to read the size_to_read first bytes at the specified offset of
+ * the file given by URL url,
+ * and write them to buffer. *out_size_read should be updated with the actual
+ * amount of bytes read (== size_to_read if the file is larger than size_to_read).
+ * During this read, the implementation should make sure to store the HTTP
+ * headers from the server response to be able to respond to
+ * proj_network_get_header_value_cbk_type callback.
+ *
+ * error_string_max_size should be the maximum size that can be written into
+ * the out_error_string buffer (including terminating nul character).
+ *
+ * @return a non-NULL opaque handle in case of success.
+ */
+typedef PROJ_NETWORK_HANDLE* (*proj_network_open_cbk_type)(
+                                                      PJ_CONTEXT* ctx,
+                                                      const char* url,
+                                                      unsigned long long offset,
+                                                      size_t size_to_read,
+                                                      void* buffer,
+                                                      size_t* out_size_read,
+                                                      size_t error_string_max_size,
+                                                      char* out_error_string,
+                                                      void* user_data);
+
+/** Network access: close callback */
+typedef void (*proj_network_close_cbk_type)(PJ_CONTEXT* ctx,
+                                            PROJ_NETWORK_HANDLE* handle,
+                                            void* user_data);
+
+/** Network access: get HTTP headers */
+typedef const char* (*proj_network_get_header_value_cbk_type)(
+                                            PJ_CONTEXT* ctx,
+                                            PROJ_NETWORK_HANDLE* handle,
+                                            const char* header_name,
+                                            void* user_data);
+
+/** Network access: read range
+ *
+ * Read size_to_read bytes from handle, starting at offset, into
+ * buffer.
+ * During this read, the implementation should make sure to store the HTTP
+ * headers from the server response to be able to respond to
+ * proj_network_get_header_value_cbk_type callback.
+ *
+ * error_string_max_size should be the maximum size that can be written into
+ * the out_error_string buffer (including terminating nul character).
+ *
+ * @return the number of bytes actually read (0 in case of error)
+ */
+typedef size_t (*proj_network_read_range_type)(
+                                            PJ_CONTEXT* ctx,
+                                            PROJ_NETWORK_HANDLE* handle,
+                                            unsigned long long offset,
+                                            size_t size_to_read,
+                                            void* buffer,
+                                            size_t error_string_max_size,
+                                            char* out_error_string,
+                                            void* user_data);
+
+int PROJ_DLL proj_context_set_network_callbacks(
+    PJ_CONTEXT* ctx,
+    proj_network_open_cbk_type open_cbk,
+    proj_network_close_cbk_type close_cbk,
+    proj_network_get_header_value_cbk_type get_header_value_cbk,
+    proj_network_read_range_type read_range_cbk,
+    void* user_data);
+
+int PROJ_DLL proj_context_set_enable_network(PJ_CONTEXT* ctx,
+                                             int enabled);
+
+int PROJ_DLL proj_context_is_network_enabled(PJ_CONTEXT* ctx);
+
+void PROJ_DLL proj_context_set_url_endpoint(PJ_CONTEXT* ctx, const char* url);
+
+const char PROJ_DLL *proj_context_get_url_endpoint(PJ_CONTEXT* ctx);
+
+const char PROJ_DLL *proj_context_get_user_writable_directory(PJ_CONTEXT *ctx, int create);
+
+void PROJ_DLL proj_grid_cache_set_enable(PJ_CONTEXT* ctx, int enabled);
+
+void PROJ_DLL proj_grid_cache_set_filename(PJ_CONTEXT* ctx, const char* fullname);
+
+void PROJ_DLL proj_grid_cache_set_max_size(PJ_CONTEXT* ctx, int max_size_MB);
+
+void PROJ_DLL proj_grid_cache_set_ttl(PJ_CONTEXT* ctx, int ttl_seconds);
+
+void PROJ_DLL proj_grid_cache_clear(PJ_CONTEXT* ctx);
+
+int PROJ_DLL proj_is_download_needed(PJ_CONTEXT* ctx,
+                                     const char* url_or_filename,
+                                     int ignore_ttl_setting);
+int PROJ_DLL proj_download_file(PJ_CONTEXT *ctx, const char *url_or_filename,
+                                int ignore_ttl_setting,
+                                int (*progress_cbk)(PJ_CONTEXT *, double pct,
+                                                    void *user_data),
+                                void *user_data);
+
+/*! @cond Doxygen_Suppress */
 
 /* Manage the transformation definition object PJ */
 PJ PROJ_DLL *proj_create (PJ_CONTEXT *ctx, const char *definition);
@@ -362,7 +547,9 @@ PJ PROJ_DLL *proj_create_crs_to_crs_from_pj(PJ_CONTEXT *ctx,
                                             const PJ *target_crs,
                                             PJ_AREA *area,
                                             const char* const *options);
+/*! @endcond Doxygen_Suppress */
 PJ PROJ_DLL *proj_normalize_for_visualization(PJ_CONTEXT *ctx, const PJ* obj);
+/*! @cond Doxygen_Suppress */
 void PROJ_DLL proj_assign_context(PJ* pj, PJ_CONTEXT* ctx);
 PJ PROJ_DLL *proj_destroy (PJ *P);
 
@@ -387,6 +574,8 @@ typedef enum PJ_DIRECTION PJ_DIRECTION;
 int PROJ_DLL proj_angular_input (PJ *P, enum PJ_DIRECTION dir);
 int PROJ_DLL proj_angular_output (PJ *P, enum PJ_DIRECTION dir);
 
+int PROJ_DLL proj_degree_input (PJ *P, enum PJ_DIRECTION dir);
+int PROJ_DLL proj_degree_output (PJ *P, enum PJ_DIRECTION dir);
 
 PJ_COORD PROJ_DLL proj_trans (PJ *P, PJ_DIRECTION direction, PJ_COORD coord);
 int PROJ_DLL proj_trans_array (PJ *P, PJ_DIRECTION direction, size_t n, PJ_COORD *coord);
@@ -446,8 +635,8 @@ PJ_INIT_INFO PROJ_DLL proj_init_info(const char *initname);
 /* Get lists of operations, ellipsoids, units and prime meridians. */
 const PJ_OPERATIONS       PROJ_DLL *proj_list_operations(void);
 const PJ_ELLPS            PROJ_DLL *proj_list_ellps(void);
-const PJ_UNITS            PROJ_DLL *proj_list_units(void);
-const PJ_UNITS            PROJ_DLL *proj_list_angular_units(void);
+PROJ_DEPRECATED(const PJ_UNITS            PROJ_DLL *proj_list_units(void), "Deprecated by proj_get_units_from_database");
+PROJ_DEPRECATED(const PJ_UNITS            PROJ_DLL *proj_list_angular_units(void), "Deprecated by proj_get_units_from_database");
 const PJ_PRIME_MERIDIANS  PROJ_DLL *proj_list_prime_meridians(void);
 
 /* These are trivial, and while occasionally useful in real code, primarily here to      */
@@ -505,7 +694,8 @@ typedef enum
     PJ_CATEGORY_PRIME_MERIDIAN,
     PJ_CATEGORY_DATUM,
     PJ_CATEGORY_CRS,
-    PJ_CATEGORY_COORDINATE_OPERATION
+    PJ_CATEGORY_COORDINATE_OPERATION,
+    PJ_CATEGORY_DATUM_ENSEMBLE
 } PJ_CATEGORY;
 
 /** \brief Object type. */
@@ -547,6 +737,10 @@ typedef enum
     PJ_TYPE_TRANSFORMATION,
     PJ_TYPE_CONCATENATED_OPERATION,
     PJ_TYPE_OTHER_COORDINATE_OPERATION,
+
+    PJ_TYPE_TEMPORAL_DATUM,
+    PJ_TYPE_ENGINEERING_DATUM,
+    PJ_TYPE_PARAMETRIC_DATUM,
 } PJ_TYPE;
 
 /** Comparison criterion. */
@@ -624,6 +818,12 @@ typedef enum {
     /** Ignore grid availability at all. Results will be presented as if
         * all grids were available. */
     PROJ_GRID_AVAILABILITY_IGNORED,
+
+    /** Results will be presented as if grids known to PROJ (that is
+    * registered in the grid_alternatives table of its database) were
+    * available. Used typically when networking is enabled.
+    */
+    PROJ_GRID_AVAILABILITY_KNOWN_AVAILABLE,
 } PROJ_GRID_AVAILABILITY_USE;
 
 /** \brief PROJ string version. */
@@ -744,6 +944,39 @@ typedef struct
     int allow_deprecated;
 } PROJ_CRS_LIST_PARAMETERS;
 
+/** \brief Structure given description of a unit.
+ *
+ * This structure may grow over time, and should not be directly allocated by
+ * client code.
+ * @since 7.1
+ */
+typedef struct
+{
+    /** Authority name. */
+    char* auth_name;
+
+    /** Object code. */
+    char* code;
+
+    /** Object name. For example "metre", "US survey foot", etc. */
+    char* name;
+
+    /** Category of the unit: one of "linear", "linear_per_time", "angular",
+     * "angular_per_time", "scale", "scale_per_time" or "time" */
+    char* category;
+
+    /** Conversion factor to apply to transform from that unit to the
+     * corresponding SI unit (metre for "linear", radian for "angular", etc.).
+     * It might be 0 in some cases to indicate no known conversion factor. */
+    double conv_factor;
+
+    /** PROJ short name, like "m", "ft", "us-ft", etc... Might be NULL */
+    char* proj_short_name;
+
+    /** Whether the object is deprecated */
+    int deprecated;
+} PROJ_UNIT_INFO;
+
 
 /**@}*/
 
@@ -836,6 +1069,10 @@ PJ_OBJ_LIST PROJ_DLL *proj_get_non_deprecated(PJ_CONTEXT *ctx,
 int PROJ_DLL proj_is_equivalent_to(const PJ *obj, const PJ *other,
                                        PJ_COMPARISON_CRITERION criterion);
 
+int PROJ_DLL proj_is_equivalent_to_with_ctx(PJ_CONTEXT *ctx,
+                                            const PJ *obj, const PJ *other,
+                                            PJ_COMPARISON_CRITERION criterion);
+
 int PROJ_DLL proj_is_crs(const PJ *obj);
 
 const char PROJ_DLL* proj_get_name(const PJ *obj);
@@ -905,6 +1142,15 @@ PROJ_CRS_INFO PROJ_DLL **proj_get_crs_info_list_from_database(
 
 void PROJ_DLL proj_crs_info_list_destroy(PROJ_CRS_INFO** list);
 
+PROJ_UNIT_INFO PROJ_DLL **proj_get_units_from_database(
+                                            PJ_CONTEXT *ctx,
+                                            const char *auth_name,
+                                            const char *category,
+                                            int allow_deprecated,
+                                            int *out_result_count);
+
+void PROJ_DLL proj_unit_list_destroy(PROJ_UNIT_INFO** list);
+
 /* ------------------------------------------------------------------------- */
 
 
@@ -968,6 +1214,11 @@ void PROJ_DLL proj_operation_factory_context_set_discard_superseded(
     PJ_OPERATION_FACTORY_CONTEXT *factory_ctx,
     int discard);
 
+void PROJ_DLL proj_operation_factory_context_set_allow_ballpark_transformations(
+    PJ_CONTEXT *ctx,
+    PJ_OPERATION_FACTORY_CONTEXT *factory_ctx,
+    int allow);
+
 /* ------------------------------------------------------------------------- */
 
 
@@ -985,6 +1236,11 @@ PJ PROJ_DLL *proj_list_get(PJ_CONTEXT *ctx,
 
 void PROJ_DLL proj_list_destroy(PJ_OBJ_LIST *result);
 
+int PROJ_DLL proj_get_suggested_operation(PJ_CONTEXT *ctx,
+                                          PJ_OBJ_LIST *operations,
+                                          PJ_DIRECTION direction,
+                                          PJ_COORD coord);
+
 /* ------------------------------------------------------------------------- */
 
 PJ PROJ_DLL *proj_crs_get_geodetic_crs(PJ_CONTEXT *ctx, const PJ *crs);
@@ -994,6 +1250,23 @@ PJ PROJ_DLL *proj_crs_get_horizontal_datum(PJ_CONTEXT *ctx, const PJ *crs);
 PJ PROJ_DLL *proj_crs_get_sub_crs(PJ_CONTEXT *ctx, const PJ *crs, int index);
 
 PJ PROJ_DLL *proj_crs_get_datum(PJ_CONTEXT *ctx, const PJ *crs);
+
+PJ PROJ_DLL *proj_crs_get_datum_ensemble(PJ_CONTEXT *ctx, const PJ *crs);
+
+PJ PROJ_DLL *proj_crs_get_datum_forced(PJ_CONTEXT *ctx, const PJ *crs);
+
+int PROJ_DLL proj_datum_ensemble_get_member_count(PJ_CONTEXT *ctx,
+                                                  const PJ *datum_ensemble);
+
+double PROJ_DLL proj_datum_ensemble_get_accuracy(PJ_CONTEXT *ctx,
+                                                 const PJ *datum_ensemble);
+
+PJ PROJ_DLL *proj_datum_ensemble_get_member(PJ_CONTEXT *ctx,
+                                            const PJ *datum_ensemble,
+                                            int member_index);
+
+double PROJ_DLL proj_dynamic_datum_get_frame_reference_epoch(PJ_CONTEXT *ctx,
+                                                     const PJ *datum);
 
 PJ PROJ_DLL *proj_crs_get_coordinate_system(PJ_CONTEXT *ctx, const PJ *crs);
 
@@ -1090,6 +1363,9 @@ int PROJ_DLL proj_coordoperation_get_towgs84_values(PJ_CONTEXT *ctx,
                                                     double *out_values,
                                                     int value_count,
                                                     int emit_error_if_incompatible);
+
+PJ PROJ_DLL *proj_coordoperation_create_inverse(PJ_CONTEXT *ctx, const PJ *obj);
+
 
 int PROJ_DLL proj_concatoperation_get_step_count(PJ_CONTEXT *ctx,
                                                  const PJ *concatoperation);

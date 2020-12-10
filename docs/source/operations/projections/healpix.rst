@@ -6,7 +6,7 @@ HEALPix
 +---------------------+----------------------------------------------------------+
 | **Classification**  | Miscellaneous                                            |
 +---------------------+----------------------------------------------------------+
-| **Available forms** | Forward and inverse, spherical and elliptical projection |
+| **Available forms** | Forward and inverse, spherical and ellipsoidal           |
 +---------------------+----------------------------------------------------------+
 | **Defined area**    | Global                                                   |
 +---------------------+----------------------------------------------------------+
@@ -53,7 +53,7 @@ Parameters
 
 .. option:: +rot_xy
 
-    .. versionadded:: 7.0.0
+    .. versionadded:: 6.3.0
 
     Rotation of the HEALPix map in degrees. A positive value results in a clockwise
     rotation around (x_0, y_0) in the cartesian / projected coordinate space.
